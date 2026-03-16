@@ -18,7 +18,7 @@ const sequelize = new Sequelize(
   process.env.MYSQL_PASSWORD || '147896325oycC',
   {
     // 注意：这里删掉了代码里的 :3306，确保默认值也是纯IP
-    host: process.env.MYSQL_ADDRESS || '10.2.112.140', 
+    host: process.env.MYSQL_ADDRESS || '10.2.112.140:3306', 
     dialect: 'mysql',
     port: 3306,
     dialectOptions: { connectTimeout: 10000 },
