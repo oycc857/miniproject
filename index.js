@@ -27,13 +27,13 @@ const sequelize = new Sequelize(
 );
 
 // 3. 模型定义：必须和你截图里的表结构完全一致
-const User = sequelize.define('Users', {
+const User = sequelize.define('User', {
   openid: { type: DataTypes.STRING, allowNull: false, unique: true },
   nickName: { type: DataTypes.STRING, defaultValue: '微信用户' },
   avatarUrl: { type: DataTypes.STRING, defaultValue: '' } // 增加这个字段
 }, {
   // 关键配置：强制指向你手动建的小写 users 表
-  tableName: 'users', 
+  tableName: 'Users', 
   timestamps: true // 必须开启，因为 Sequelize 默认需要 createdAt 和 updatedAt
 });
 
