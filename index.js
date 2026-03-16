@@ -48,8 +48,9 @@ app.post('/login', async (req, res) => {
     console.log('登录处理成功:', user.id);
     res.json({ success: true, data: user });
   } catch (err) {
-    console.error('❌ 数据库或逻辑错误:', err.message);
-    res.json({ success: false, msg: '服务器内部错误', error: err.message });
+    console.error('数据库操作崩了:', err);
+    // 这里把错误发回给小程序，方便你直接在手机/开发者工具上看到原因
+    res.status(500).send({ success: false, msg: '数据库报错', error: err.message });
   }
 });
 
