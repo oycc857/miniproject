@@ -3,66 +3,55 @@ const { Sequelize, DataTypes } = require('sequelize');
 const app = express();
 app.use(express.json());
 
-// 1. 连接数据库 (云托管会自动注入这些环境变量)
-const sequelize = new Sequelize(
-  process.env.MYSQL_DATABASE || 'nodejs_demo', // 数据库名
-  process.env.MYSQL_USERNAME || 'root',    // 用户名
-  process.env.MYSQL_PASSWORD || '147896325oycC',        // 密码
-  {
-    host: 'fqlszvfx.voice-backend.82q6xsh0.77w4d0u3.com' || 'localhost', 
-    dialect: 'mysql',
-    port: 3306,
-    logging: false, // 生产环境关闭日志，保持整洁
-    pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    },
-    dialectOptions: {
-      // 部分云托管版本需要这个来确保连接稳定性
-      connectTimeout: 60000
-    }
-  }
-);
-// 测试连接是否成功
-async function testConnection() {
-  try {
-    await sequelize.authenticate();
-    console.log('✅ 数据库连接成功！');
-    // 同步模型（如果表不存在会自动创建）
-    await sequelize.sync({ alter: true }); 
-    console.log('✅ 用户表同步完成！');
-  } catch (error) {
-    console.error('❌ 无法连接到数据库:', error);
-  }
-}
-// 2. 定义用户模型
-const User = sequelize.define('User', {
-  openid: { type: DataTypes.STRING, allowNull: false, unique: true },
-  nickName: { type: DataTypes.STRING, defaultValue: '微信用户' },
-  avatarUrl: { type: DataTypes.STRING, defaultValue: '' }
+// 增加打印：确认服务收到请求
+app.use((req, res, next) => {
+  console.log(`[${new Date().toLocaleString()}] 收到请求: ${req.method} ${req.url}`);
+  next();
 });
 
-// 3. 登录接口
+const sequelize = new Sequelize(
+  process.env.MYSQL_DATABASE || 'nodejs_demo',
+  process.env.MYSQL_USERNAME || 'root',
+  process.env.MYSQL_PASSWORD || '147896325oycC',
+  {
+    host: process.env.MYSQL_ADDRESS ||  'fqlszvfx.voice-backend.82q6xsh0.77w4d0u3.com', 
+    dialect: 'mysql',
+    port: 3306,
+    // 关键：缩短超时时间，防止无限卡死
+    dialectOptions: { connectTimeout: 10000 } 
+  }
+);
+
+const User = sequelize.define('User', {
+  openid: { type: DataTypes.STRING, allowNull: false, unique: true },
+  nickName: { type: DataTypes.STRING, defaultValue: '微信用户' }
+});
+
 app.post('/login', async (req, res) => {
-  // 云托管核心：从 header 直接获取 openid
+  console.log('--- 进入登录逻辑 ---');
   const openid = req.headers['x-wx-openid'];
-  
+  console.log('当前 OpenID:', openid);
+
   if (!openid) {
-    return res.status(401).send({ success: false, msg: '未获取到身份信息' });
+    return res.status(401).json({ success: false, msg: '未获取到OpenID' });
   }
 
   try {
-    await sequelize.sync(); // 自动创建表
+    console.log('正在尝试连接数据库并同步表...');
+    await sequelize.authenticate(); // 测试连接
+    await User.sync();             // 同步表
+    
     const [user, created] = await User.findOrCreate({
       where: { openid: openid }
     });
-    res.send({ success: true, data: user });
+
+    console.log('登录处理成功:', user.id);
+    res.json({ success: true, data: user });
   } catch (err) {
-    res.status(500).send({ success: false, error: err.message });
+    console.error('❌ 数据库或逻辑错误:', err.message);
+    res.json({ success: false, msg: '服务器内部错误', error: err.message });
   }
 });
 
 const PORT = process.env.PORT || 80;
-app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 服务正式启动，端口: ${PORT}`));
