@@ -9,11 +9,34 @@ const sequelize = new Sequelize(
   process.env.MYSQL_USERNAME || 'root',    // 用户名
   process.env.MYSQL_PASSWORD || '147896325oycC',        // 密码
   {
-    host: process.env.MYSQL_ADDRESS || 'localhost', 
-    dialect: 'mysql'
+    host: 'cloud1-3gy4mj7v0c84bdb8' || 'localhost', 
+    dialect: 'mysql',
+    port: 3306,
+    logging: false, // 生产环境关闭日志，保持整洁
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    },
+    dialectOptions: {
+      // 部分云托管版本需要这个来确保连接稳定性
+      connectTimeout: 60000
+    }
   }
 );
-
+// 测试连接是否成功
+async function testConnection() {
+  try {
+    await sequelize.authenticate();
+    console.log('✅ 数据库连接成功！');
+    // 同步模型（如果表不存在会自动创建）
+    await sequelize.sync({ alter: true }); 
+    console.log('✅ 用户表同步完成！');
+  } catch (error) {
+    console.error('❌ 无法连接到数据库:', error);
+  }
+}
 // 2. 定义用户模型
 const User = sequelize.define('User', {
   openid: { type: DataTypes.STRING, allowNull: false, unique: true },
