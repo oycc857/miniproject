@@ -27,7 +27,7 @@ const sequelize = new Sequelize(
 );
 
 // 3. 模型定义：必须和你截图里的表结构完全一致
-const User = sequelize.define('User', {
+const User = sequelize.define('Users', {
   openid: { type: DataTypes.STRING, allowNull: false, unique: true },
   nickName: { type: DataTypes.STRING, defaultValue: '微信用户' },
   avatarUrl: { type: DataTypes.STRING, defaultValue: '' } // 增加这个字段
