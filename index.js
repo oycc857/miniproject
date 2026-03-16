@@ -22,7 +22,7 @@ const sequelize = new Sequelize(
   }
 );
 
-const User = sequelize.define('User', {
+const User = sequelize.define('user', {
   openid: { type: DataTypes.STRING, allowNull: false, unique: true },
   nickName: { type: DataTypes.STRING, defaultValue: '微信用户' }
 });
