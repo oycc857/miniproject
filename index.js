@@ -28,29 +28,31 @@ const User = sequelize.define('User', {
 });
 
 app.post('/login', async (req, res) => {
-  console.log('--- 进入登录逻辑 ---');
-  const openid = req.headers['x-wx-openid'];
-  console.log('当前 OpenID:', openid);
-
-  if (!openid) {
-    return res.status(401).json({ success: false, msg: '未获取到OpenID' });
-  }
+  // 云托管会自动在 header 里带上 openid
+  const openid = req.headers['x-wx-openid']; 
+  const { nickName, avatarUrl } = req.body; // 接收前端传来的资料
 
   try {
-    console.log('正在尝试连接数据库并同步表...');
-    await sequelize.authenticate(); // 测试连接
-    await User.sync();             // 同步表
-    
+    // findOrCreate: 如果找不到就新建，找到了就返回
     const [user, created] = await User.findOrCreate({
-      where: { openid: openid }
+      where: { openid: openid },
+      defaults: {
+        openid: openid,
+        nickName: nickName || '微信用户',
+        avatarUrl: avatarUrl || ''
+      }
     });
 
-    console.log('登录处理成功:', user.id);
-    res.json({ success: true, data: user });
+    // 如果用户已存在但资料变了，可以更新一下
+    if (!created && nickName) {
+      user.nickName = nickName;
+      user.avatarUrl = avatarUrl;
+      await user.save();
+    }
+
+    res.send({ success: true, data: user });
   } catch (err) {
-    console.error('数据库操作崩了:', err);
-    // 这里把错误发回给小程序，方便你直接在手机/开发者工具上看到原因
-    res.status(500).send({ success: false, msg: '数据库报错', error: err.message });
+    res.status(500).send({ success: false, error: err.message });
   }
 });
 
