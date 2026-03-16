@@ -9,7 +9,7 @@ const sequelize = new Sequelize(
   process.env.MYSQL_USERNAME || 'root',    // 用户名
   process.env.MYSQL_PASSWORD || '147896325oycC',        // 密码
   {
-    host: 'cloud1-3gy4mj7v0c84bdb8' || 'localhost', 
+    host: '10.2.112.140:3306' || 'localhost', 
     dialect: 'mysql',
     port: 3306,
     logging: false, // 生产环境关闭日志，保持整洁
