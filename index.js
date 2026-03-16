@@ -14,7 +14,7 @@ const sequelize = new Sequelize(
   process.env.MYSQL_USERNAME || 'root',
   process.env.MYSQL_PASSWORD || '147896325oycC',
   {
-    host: process.env.MYSQL_ADDRESS ||  'fqlszvfx.voice-backend.82q6xsh0.77w4d0u3.com', 
+    host: process.env.MYSQL_ADDRESS ||  '10.2.112.140:3306', 
     dialect: 'mysql',
     port: 3306,
     // 关键：缩短超时时间，防止无限卡死
