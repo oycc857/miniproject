@@ -28,12 +28,11 @@ const User = sequelize.define('User', {
 });
 
 app.post('/login', async (req, res) => {
-  // 云托管会自动在 header 里带上 openid
-  const openid = req.headers['x-wx-openid']; 
-  const { nickName, avatarUrl } = req.body; // 接收前端传来的资料
+  const openid = req.headers['x-wx-openid'];
+  const { nickName, avatarUrl } = req.body; // 拿到小程序传来的昵称头像
 
   try {
-    // findOrCreate: 如果找不到就新建，找到了就返回
+    // 自动寻找或创建用户
     const [user, created] = await User.findOrCreate({
       where: { openid: openid },
       defaults: {
@@ -43,8 +42,8 @@ app.post('/login', async (req, res) => {
       }
     });
 
-    // 如果用户已存在但资料变了，可以更新一下
-    if (!created && nickName) {
+    // 如果是老用户，更新一下最新的昵称和头像
+    if (!created) {
       user.nickName = nickName;
       user.avatarUrl = avatarUrl;
       await user.save();
@@ -52,7 +51,8 @@ app.post('/login', async (req, res) => {
 
     res.send({ success: true, data: user });
   } catch (err) {
-    res.status(500).send({ success: false, error: err.message });
+    console.error('数据库操作失败:', err);
+    res.status(500).send({ success: false, msg: '数据库报错', error: err.message });
   }
 });
 
