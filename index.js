@@ -75,6 +75,7 @@ app.post('/login', async (req, res) => {
 // 上传并克隆接口
 app.post('/upload', upload.single('voiceFile'), async (req, res) => {
   // 优先从 header 获取微信 OpenID
+  console.log("收到了nmnmnmnmnmn'");
   const openid = req.headers['x-wx-openid'] || req.body.openid;
   const file = req.file;
 
