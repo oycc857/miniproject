@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { Service } = require('volc-sdk-nodejs'); 
+const { tts_customization } = require('@volcengine/openapi');
 const fs = require('fs');
 const { Sequelize, DataTypes } = require('sequelize');
 
@@ -41,11 +41,11 @@ const UserVoice = sequelize.define('UserVoice', {
 }, { tableName: 'UserVoices', timestamps: true });
 
 // --- 初始化火山 SDK ---
-const vcllClient = new Service({
-    host: 'openspeech.bytedance.com',
-    region: 'cn-north-1',
-    accessKeyId: process.env.VOLC_AK,
-    secretAccessKey: process.env.VOLC_SK,
+const vcllClient = new tts_customization.TtsCustomizationService({
+  accessKeyId: process.env.VOLC_AK,
+  secretAccessKey: process.env.VOLC_SK,
+  region: 'cn-north-1',
+  host: 'openspeech.bytedance.com'
 });
 
 // 登录接口
