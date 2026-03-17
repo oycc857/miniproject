@@ -5,6 +5,7 @@
   "dependencies": {
     "express": "^4.17.1",
     "multer": "^1.4.5-lts.1",
+    "volc-sdk-nodejs": "latest",
     "axios": "^1.6.0",
     "crypto": "^1.0.1",
     "mysql2": "^2.3.3",
