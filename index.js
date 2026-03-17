@@ -37,6 +37,17 @@ const User = sequelize.define('User', {
   timestamps: true // 必须开启，因为 Sequelize 默认需要 createdAt 和 updatedAt
 });
 
+const UserVoice = sequelize.define('UserVoice', {
+  openid: DataTypes.STRING,
+  voiceName: DataTypes.STRING,
+  speakerId: DataTypes.STRING,
+  status: DataTypes.INTEGER, // 0: 训练中, 1: 成功, 2: 失败
+  audioUrl: DataTypes.STRING
+}, {
+  tableName: 'UserVoices',
+  timestamps: true
+});
+
 app.post('/login', async (req, res) => {
   console.log('--- 进入登录逻辑 ---');
   const openid = req.headers['x-wx-openid'];
