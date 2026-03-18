@@ -44,12 +44,9 @@ app.post('/upload-base64', async (req, res) => {
   if (!audioData) return res.status(400).send({ success: false, msg: '缺少音频数据' });
 
   try {
-    // 1. 根据官方文档：Action 是 'CreateTtsCustomizationSpeaker'
-    // 接口版本 Version 是 '2023-11-01'
+    // 1. 构造请求体（根据 2023-11-07 版本要求）
     const requestBody = {
-      Action: 'CreateTtsCustomizationSpeaker',
-      Version: '2023-11-01',
-      Appid: process.env.VOLC_APPID,
+      AppID: process.env.VOLC_APPID, // 注意部分版本 AppID 大写
       ServiceId: process.env.VOLC_SERVICE_ID,
       SpeakerName: `user_${openid ? openid.slice(-5) : 'test'}`,
       AudioFormat: 'mp3',
@@ -57,47 +54,45 @@ app.post('/upload-base64', async (req, res) => {
       AudioData: audioData 
     };
 
-    // 2. 修正后的官方请求地址（注意：V1接口通常不带具体方法名在URL，而是靠 Header 识别）
-    // 如果这个地址依然 404，说明需要加上具体的 Service 路径
-    const volcUrl = 'https://openspeech.bytedance.com/api/v1/tts_customization/create_speaker';
+    // 2. ⭐ 核心修正：将 Action, Version, Service, Region 全部挂载到 URL 参数中
+    // 这是火山 OpenAPI 网关路由的“准考证”
+    const volcUrl = 'https://openspeech.bytedance.com/api/v1/tts_customization' + 
+                   '?Action=CreateTtsCustomizationSpeaker' + 
+                   '&Version=2023-11-07' + // 使用你提供的固定版本
+                   '&Service=speech_saas_prod' + // 指定服务名
+                   '&Region=cn-north-1'; // 指定华北区域
 
-    console.log('正在请求火山接口:', volcUrl);
+    console.log('正在发送V3规范请求:', volcUrl);
 
     const volcResponse = await axios.post(volcUrl, requestBody, {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        // 关键：某些环境下需要显式指定 Action
-        'X-Action': 'CreateTtsCustomizationSpeaker',
-        'X-Version': '2023-11-01'
+        // 额外补强：在 Header 中也带上这些标识，确保网关 100% 识别
+        'X-Top-Service': 'speech_saas_prod',
+        'X-Top-Region': 'cn-north-1'
       },
-      timeout: 45000 // 增加到45秒，Base64 传输较慢
+      timeout: 45000 
     });
 
     const result = volcResponse.data;
     console.log('火山返回结果:', JSON.stringify(result));
 
-    // 3. 按照文档，成功会返回 Data.SpeakerId
     if (result.Data && result.Data.SpeakerId) {
       await UserVoice.create({
         openid: openid,
         speakerId: result.Data.SpeakerId,
-        status: 0
+        status: 0 // 状态：训练中
       });
       res.send({ success: true, speakerId: result.Data.SpeakerId });
     } else {
-      // 捕获官方文档提到的 ResponseMetadata 错误
-      const errMsg = result.ResponseMetadata?.Error?.Message || '火山接口校验未通过';
-      res.send({ success: false, msg: errMsg });
+      // 捕获具体的业务错误码
+      const errorMsg = result.ResponseMetadata?.Error?.Message || '火山业务逻辑错误';
+      res.send({ success: false, msg: errorMsg });
     }
   } catch (err) {
-    // 打印更详细的错误以便调试
     const errorDetail = err.response ? JSON.stringify(err.response.data) : err.message;
     console.error('后端调用火山崩溃:', errorDetail);
-    res.status(500).send({ 
-      success: false, 
-      msg: '服务器连接火山失败', 
-      debug: errorDetail 
-    });
+    res.status(500).send({ success: false, msg: '网关连接失败', debug: errorDetail });
   }
 });
 
