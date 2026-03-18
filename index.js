@@ -48,31 +48,30 @@ const VOLC_CONFIG = {
 };
 
 app.post('/upload-base64', async (req, res) => {
-  const openid = req.headers['x-wx-openid'];
   const { audioData } = req.body;
-
-  // 调试日志：检查收到的数据
-  console.log('--- 收到上传请求 ---');
-  console.log('OpenID:', openid);
-  console.log('数据长度:', audioData ? audioData.length : 0);
-
-  if (!audioData) {
-    return res.status(400).send({ success: false, msg: '音频数据为空' });
-  }
+  const openid = req.headers['x-wx-openid'] || "user_1";
 
   try {
     const response = await axios.post(
       'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
       {
-        app: { appid: VOLC_CONFIG.appid, token: VOLC_CONFIG.token, cluster: "volcano_icl" },
-        user: { uid: openid || "user_default" },
+        app: {
+          appid: VOLC_CONFIG.appid,
+          token: VOLC_CONFIG.token,
+          cluster: "volcano_icl" // 必须是这个集群
+        },
+        user: { uid: openid },
         audio: { format: "mp3", sample_rate: 16000 },
         request: {
           column: 1,
-          text: "语音克隆激活测试。", 
+          text: "这是我的声音克隆测试，请激活我的专属音色。", 
+          // ⭐ 关键点 1：第一次克隆，speaker 必须填固定值
           speaker: "icl_default", 
           voice_type: "icl",
-          editing: { audio_data: audioData }
+          editing: {
+            // ⭐ 关键点 2：这里的 audio_data 是触发克隆的唯一凭证
+            audio_data: audioData 
+          }
         }
       },
       {
@@ -80,18 +79,29 @@ app.post('/upload-base64', async (req, res) => {
           'Content-Type': 'application/json',
           'X-Api-App-Id': VOLC_CONFIG.appid,
           'X-Api-Access-Key': VOLC_CONFIG.token,
-          'X-Api-Resource-Id': VOLC_CONFIG.resource_id
-        },
-        timeout: 30000 // 后端也给 30 秒超时
+          // ⭐ 关键点 3：这里必须用规格 ID
+          'X-Api-Resource-Id': 'seed-icl-2.0' 
+        }
       }
     );
 
     console.log('火山引擎返回内容:', JSON.stringify(response.data));
 
     if (response.data.addition && response.data.addition.speaker_id) {
-       res.send({ success: true, speakerId: response.data.addition.speaker_id });
+       // 成功后，你会拿到一个新的 speaker_id (例如：S_xxxx)
+       const newSpeakerId = response.data.addition.speaker_id;
+       
+       // 存入数据库
+       await UserVoice.create({
+         openid: openid,
+         voiceName: "自定义音色",
+         speakerId: newSpeakerId,
+         status: 1
+       });
+
+       res.send({ success: true, speakerId: newSpeakerId });
     } else {
-       res.send({ success: false, msg: response.data.message || '火山接口返回业务错误' });
+       res.send({ success: false, msg: response.data.message });
     }
   } catch (err) {
     // ⭐ 核心调试逻辑：打印出详细的 Axios 错误
