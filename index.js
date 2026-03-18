@@ -59,7 +59,7 @@ app.post('/upload-base64', async (req, res) => {
   'https://openspeech.bytedance.com/api/v3/tts/voice_clone',
   {
     "speaker_id": `s_${Date.now()}`, // 建议用小写 s_ 开头，确保唯一
-    "audios": [
+    "audios_list": [
       {
         "content": audioData, // ⭐ 尝试将 data 改为 content
         "format": "mp3"
@@ -94,11 +94,9 @@ app.post('/upload-base64', async (req, res) => {
        res.send({ success: false, msg: response.data.message });
     }
   } catch (err) {
-    if (err.response) {
-      console.error("火山接口报错 (Data):", JSON.stringify(err.response.data));
-    }
-    res.status(500).send({ success: false, msg: '克隆请求失败' });
-  }
+    // 打印详细错误方便排查
+  console.error("完整错误详情:", JSON.stringify(err.response?.data || err.message));
+  res.status(500).send({ success: false, msg: '接口调用异常' });
 });
 
 // --- 其他功能路由（完整保留） ---
