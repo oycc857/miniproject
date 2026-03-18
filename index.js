@@ -1,4 +1,5 @@
 const express = require('express');
+const axios = require('axios'); 
 const { Sequelize, DataTypes } = require('sequelize');
 
 const app = express();
@@ -53,6 +54,20 @@ app.post('/login', async (req, res) => {
     res.json({ success: true, data: user });
   } catch (err) {
     res.status(500).json({ success: false, msg: '数据库错误' });
+  }
+});
+
+app.get('/get_voices', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  if (!openid) return res.status(401).send('Unauthorized');
+  try {
+    const voices = await UserVoice.findAll({
+      where: { openid: openid },
+      order: [['createdAt', 'DESC']]
+    });
+    res.json({ success: true, list: voices });
+  } catch (err) {
+    res.status(500).json({ success: false, msg: '查询失败' });
   }
 });
 
