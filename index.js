@@ -51,52 +51,59 @@ app.post('/upload-base64', async (req, res) => {
   const { audioData } = req.body;
   const openid = req.headers['x-wx-openid'] || "user_default";
 
-  // 生成唯一音色 ID
-  const mySpeakerId = `S_${Date.now()}`; 
+  // 1. 生成唯一 ID
+  const mySpeakerId = `s_${Date.now()}`; 
 
   try {
+    // 2. 调用火山引擎接口
     const response = await axios.post(
-  'https://openspeech.bytedance.com/api/v3/tts/voice_clone',
-  {
-    "speaker_id": `s_${Date.now()}`, // 建议用小写 s_ 开头，确保唯一
-    "audios_list": [
+      'https://openspeech.bytedance.com/api/v3/tts/voice_clone',
       {
-        "content": audioData, // ⭐ 尝试将 data 改为 content
-        "format": "mp3"
+        "speaker_id": mySpeakerId,
+        "audio_list": [ // 尝试使用 audio_list 规避 45000000 错误
+          {
+            "content": audioData, // 使用 content 承载 Base64
+            "format": "mp3"
+          }
+        ],
+        "language": 0,
+        "model_type": 4 
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-App-Key': '你的APPID', // 注意这里换成你的配置变量
+          'X-Api-Access-Key': '你的TOKEN',
+          'X-Api-Resource-Id': '你的RESOURCE_ID'
+        }
       }
-    ],
-    "language": 0, // 0 代表中文
-    "model_types": [4] // 固定为 4
-  },
-  {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-App-Key': VOLC_CONFIG.appid,
-      'X-Api-Access-Key': VOLC_CONFIG.token,
-      'X-Api-Resource-Id': VOLC_CONFIG.resource_id
-    }
-  }
-);
+    );
 
-    console.log('火山引擎克隆返回:', JSON.stringify(response.data));
+    console.log('火山克隆成功反馈:', response.data);
 
-    // 状态码：1-训练中, 2-训练成功, 4-激活
-    if (response.data.status === 2 || response.data.status === 4 || response.data.status === 1) {
-       // 存储到数据库
-       await UserVoice.create({
-         openid: openid,
-         voiceName: "我的新音色",
-         speakerId: mySpeakerId,
-         status: response.data.status 
-       });
-       res.send({ success: true, speakerId: mySpeakerId, status: response.data.status });
+    // 3. 结果判断
+    if (response.data && (response.data.status === 1 || response.data.status === 2)) {
+      // 存储到数据库 (确保你之前定义了 UserVoice 模型)
+      await UserVoice.create({
+        openid: openid,
+        voiceName: "我的新音色",
+        speakerId: mySpeakerId,
+        status: response.data.status 
+      });
+      res.send({ success: true, speakerId: mySpeakerId });
     } else {
-       res.send({ success: false, msg: response.data.message });
+      res.send({ success: false, msg: response.data.message || '克隆状态异常' });
     }
+
   } catch (err) {
-    // 打印详细错误方便排查
-  console.error("完整错误详情:", JSON.stringify(err.response?.data || err.message));
-  res.status(500).send({ success: false, msg: '接口调用异常' });
+    // 打印详细错误方便在日志里看
+    if (err.response) {
+      console.error("火山接口具体返回:", JSON.stringify(err.response.data));
+    } else {
+      console.error("网络或语法错误:", err.message);
+    }
+    res.status(500).send({ success: false, msg: '服务器内部错误' });
+  }
 });
 
 // --- 其他功能路由（完整保留） ---
@@ -117,10 +124,7 @@ app.post('/login', async (req, res) => {
     }
     res.json({ success: true, data: user });
   } catch (err) {
-    if (err.response) {
-      console.error("火山接口报错 (Data):", JSON.stringify(err.response.data));
-    }
-    res.status(500).send({ success: false, msg: '克隆请求失败' });
+    res.status(500).json({ success: false, msg: '数据库错误' });
   }
 });
 
