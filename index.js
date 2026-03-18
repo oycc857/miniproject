@@ -42,49 +42,21 @@ const UserVoice = sequelize.define('UserVoice', {
 app.post('/login', async (req, res) => {
   const openid = req.headers['x-wx-openid'];
   const { nickName, avatarUrl } = req.body;
-  
   if (!openid) return res.status(401).json({ success: false, msg: '未获取到OpenID' });
-
   try {
-    // 1. 尝试查找或创建用户
+    await User.sync({ alter: true });
     const [user, created] = await User.findOrCreate({
       where: { openid: openid },
-      defaults: { 
-        openid, 
-        nickName: nickName || '微信用户', 
-        avatarUrl: avatarUrl || '' 
-      }
+      defaults: { openid, nickName: nickName || '微信用户', avatarUrl: avatarUrl || '' }
     });
-
-    // 2. 如果不是新创建的，且有新资料传进来，则更新
     if (!created && (nickName || avatarUrl)) {
       if (nickName) user.nickName = nickName;
       if (avatarUrl) user.avatarUrl = avatarUrl;
       await user.save();
     }
-
     res.json({ success: true, data: user });
   } catch (err) {
-    // ⭐ 重要：在日志里打印具体的错误原因（比如：Access denied 或 Connection timeout）
-    console.error("数据库操作具体错误:", err); 
-    res.status(500).json({ 
-      success: false, 
-      msg: '数据库错误: ' + err.message 
-    });
-  }
-});
-
-// 将 sync 移到此处，只在启动时运行一次
-const port = process.env.PORT || 80;
-app.listen(port, async () => {
-  console.log('Server running on port', port);
-  try {
-    await sequelize.authenticate(); // 测试连接是否通畅
-    await User.sync({ alter: true }); 
-    await UserVoice.sync({ alter: true });
-    console.log('数据库连接并同步成功');
-  } catch (error) {
-    console.error('数据库启动同步失败:', error);
+    res.status(500).json({ success: false, msg: '数据库错误' });
   }
 });
 
