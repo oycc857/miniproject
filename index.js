@@ -51,50 +51,51 @@ app.post('/upload-base64', async (req, res) => {
   const { audioData } = req.body;
   const openid = req.headers['x-wx-openid'] || "user_default";
 
-  // 1. 生成一个本次克隆的唯一 ID (格式要求：S_加上你的自定义后缀)
-  // 注意：这个 ID 建议从你的数据库取，或者用时间戳生成，不能重复
+  // 生成唯一音色 ID
   const mySpeakerId = `S_${Date.now()}`; 
 
   try {
     const response = await axios.post(
-      'https://openspeech.bytedance.com/api/v3/tts/voice_clone', // ⭐ 必须是这个 URL
+      'https://openspeech.bytedance.com/api/v3/tts/voice_clone',
       {
-        "speaker_id": mySpeakerId, // ⭐ 必须传一个你定义的 ID
-        "audios": {
-          "data": audioData,       // Base64 数据
-          "format": "mp3"          // 对应你小程序的录音格式
-        },
-        "language": 0,             // 0 代表中文
-        "model_types": [4]         // 4 代表你要的 ICL 2.0 效果
+        "speaker_id": mySpeakerId,
+        "audios": [ // ⭐ 注意这里：必须是中括号（数组）
+          {
+            "data": audioData, // 你的 Base64 字符串
+            "format": "mp3"
+          }
+        ],
+        "language": 0,
+        "model_types": [4] 
       },
       {
         headers: {
           'Content-Type': 'application/json',
-          'X-Api-App-Key': VOLC_CONFIG.appid,    // ⭐ 文档要求是 App-Key
-          'X-Api-Access-Key': VOLC_CONFIG.token, // 你的 Access Token
-          'X-Api-Resource-Id': VOLC_CONFIG.resource_id // 你的实例 ID
+          'X-Api-App-Key': VOLC_CONFIG.appid,
+          'X-Api-Access-Key': VOLC_CONFIG.token,
+          'X-Api-Resource-Id': VOLC_CONFIG.resource_id
         }
       }
     );
 
     console.log('火山引擎克隆返回:', JSON.stringify(response.data));
 
-    // 状态码 2 代表训练成功，4 代表已激活
-    if (response.data.status === 2 || response.data.status === 4) {
+    // 状态码：1-训练中, 2-训练成功, 4-激活
+    if (response.data.status === 2 || response.data.status === 4 || response.data.status === 1) {
        // 存储到数据库
        await UserVoice.create({
          openid: openid,
-         voiceName: "我的新声音",
-         speakerId: mySpeakerId, // 以后合成就用这个 ID
-         status: 1
+         voiceName: "我的新音色",
+         speakerId: mySpeakerId,
+         status: response.data.status 
        });
-       res.send({ success: true, speakerId: mySpeakerId });
+       res.send({ success: true, speakerId: mySpeakerId, status: response.data.status });
     } else {
-       res.send({ success: false, msg: response.data.message || '克隆中或排队中', code: response.data.status });
+       res.send({ success: false, msg: response.data.message });
     }
   } catch (err) {
     if (err.response) {
-      console.error("报错详情:", JSON.stringify(err.response.data));
+      console.error("火山接口报错 (Data):", JSON.stringify(err.response.data));
     }
     res.status(500).send({ success: false, msg: '克隆请求失败' });
   }
