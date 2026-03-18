@@ -56,27 +56,27 @@ app.post('/upload-base64', async (req, res) => {
 
   try {
     const response = await axios.post(
-      'https://openspeech.bytedance.com/api/v3/tts/voice_clone',
+  'https://openspeech.bytedance.com/api/v3/tts/voice_clone',
+  {
+    "speaker_id": `s_${Date.now()}`, // 建议用小写 s_ 开头，确保唯一
+    "audios": [
       {
-        "speaker_id": mySpeakerId,
-        "audios": [ // ⭐ 注意这里：必须是中括号（数组）
-          {
-            "data": audioData, // 你的 Base64 字符串
-            "format": "mp3"
-          }
-        ],
-        "language": 0,
-        "model_types": [4] 
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-App-Key': VOLC_CONFIG.appid,
-          'X-Api-Access-Key': VOLC_CONFIG.token,
-          'X-Api-Resource-Id': VOLC_CONFIG.resource_id
-        }
+        "content": audioData, // ⭐ 尝试将 data 改为 content
+        "format": "mp3"
       }
-    );
+    ],
+    "language": 0, // 0 代表中文
+    "model_types": [4] // 固定为 4
+  },
+  {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-App-Key': VOLC_CONFIG.appid,
+      'X-Api-Access-Key': VOLC_CONFIG.token,
+      'X-Api-Resource-Id': VOLC_CONFIG.resource_id
+    }
+  }
+);
 
     console.log('火山引擎克隆返回:', JSON.stringify(response.data));
 
