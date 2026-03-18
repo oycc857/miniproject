@@ -72,9 +72,9 @@ app.post('/upload-base64', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'X-Api-App-Key': '你的APPID', // 注意这里换成你的配置变量
-          'X-Api-Access-Key': '你的TOKEN',
-          'X-Api-Resource-Id': '你的RESOURCE_ID'
+          'X-Api-App-Key': '2480093223', // 注意这里换成你的配置变量
+          'X-Api-Access-Key': 'caZWuEhKg2TWjHZWXFznm5GPWOr21AqL',
+          'X-Api-Resource-Id': 'seed-icl-2.0'
         }
       }
     );
