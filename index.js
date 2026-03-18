@@ -4,6 +4,9 @@ const { Sequelize, DataTypes } = require('sequelize');
 
 const app = express();
 
+app.use(express.json()); // 解析 JSON 格式的请求体
+app.use(express.urlencoded({ extended: false })); // 解析 URL 编码格式
+
 // 2. 数据库连接（保持你原有的配置）
 const sequelize = new Sequelize(
   process.env.MYSQL_DATABASE || 'nodejs_demo',
