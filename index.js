@@ -56,12 +56,15 @@ app.post('/upload-base64', async (req, res) => {
     };
 
     // --- 万能修复：直接使用 axios 发送 POST 请求给火山，不再调用不存在的 vcllClient.request ---
-    const volcResponse = await axios.post('https://openspeech.bytedance.com/api/v1/tts_customization/create_speaker', requestBody, {
+  const volcResponse = await axios.post('https://openspeech.bytedance.com/api/v1/tts_customization', requestBody, {
       headers: {
         'Content-Type': 'application/json',
-        // 如果环境变量里有 Token 鉴权可在此添加，若无则火山会根据 IP 或 Appid 校验
+        // 关键：火山接口需要通过 Header 传递 Action
+        'Resource-Id': 'volc.openapi.v3', 
+        'X-Action': 'CreateTtsCustomizationSpeaker',
+        'X-Version': '2023-11-01'
       },
-      timeout: 30000 // 后端内部请求超时设为 30s
+      timeout: 30000 
     });
 
     const result = volcResponse.data;
