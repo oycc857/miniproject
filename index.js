@@ -44,6 +44,8 @@ app.post('/upload-base64', async (req, res) => {
   if (!audioData) return res.status(400).send({ success: false, msg: '缺少音频数据' });
 
   try {
+    // 1. 根据官方文档：Action 是 'CreateTtsCustomizationSpeaker'
+    // 接口版本 Version 是 '2023-11-01'
     const requestBody = {
       Action: 'CreateTtsCustomizationSpeaker',
       Version: '2023-11-01',
@@ -55,23 +57,27 @@ app.post('/upload-base64', async (req, res) => {
       AudioData: audioData 
     };
 
-    // --- 万能修复：直接使用 axios 发送 POST 请求给火山，不再调用不存在的 vcllClient.request ---
-  const volcResponse = await axios.post('https://openspeech.bytedance.com/api/v1/tts_customization', requestBody, {
+    // 2. 修正后的官方请求地址（注意：V1接口通常不带具体方法名在URL，而是靠 Header 识别）
+    // 如果这个地址依然 404，说明需要加上具体的 Service 路径
+    const volcUrl = 'https://openspeech.bytedance.com/api/v1/tts_customization/create_speaker';
+
+    console.log('正在请求火山接口:', volcUrl);
+
+    const volcResponse = await axios.post(volcUrl, requestBody, {
       headers: {
-        'Content-Type': 'application/json',
-        // 关键：火山接口需要通过 Header 传递 Action
-        'Resource-Id': 'volc.openapi.v3', 
+        'Content-Type': 'application/json; charset=utf-8',
+        // 关键：某些环境下需要显式指定 Action
         'X-Action': 'CreateTtsCustomizationSpeaker',
         'X-Version': '2023-11-01'
       },
-      timeout: 30000 
+      timeout: 45000 // 增加到45秒，Base64 传输较慢
     });
 
     const result = volcResponse.data;
-    console.log('火山返回原始结果:', result);
+    console.log('火山返回结果:', JSON.stringify(result));
 
+    // 3. 按照文档，成功会返回 Data.SpeakerId
     if (result.Data && result.Data.SpeakerId) {
-      // 成功后存入数据库
       await UserVoice.create({
         openid: openid,
         speakerId: result.Data.SpeakerId,
@@ -79,16 +85,18 @@ app.post('/upload-base64', async (req, res) => {
       });
       res.send({ success: true, speakerId: result.Data.SpeakerId });
     } else {
-      res.send({ 
-        success: false, 
-        msg: result.ResponseMetadata?.Error?.Message || '火山接口返回错误' 
-      });
+      // 捕获官方文档提到的 ResponseMetadata 错误
+      const errMsg = result.ResponseMetadata?.Error?.Message || '火山接口校验未通过';
+      res.send({ success: false, msg: errMsg });
     }
   } catch (err) {
-    console.error('调用火山报错详情:', err.response ? err.response.data : err.message);
+    // 打印更详细的错误以便调试
+    const errorDetail = err.response ? JSON.stringify(err.response.data) : err.message;
+    console.error('后端调用火山崩溃:', errorDetail);
     res.status(500).send({ 
       success: false, 
-      msg: '后端转发失败: ' + (err.response?.data?.ResponseMetadata?.Error?.Message || err.message) 
+      msg: '服务器连接火山失败', 
+      debug: errorDetail 
     });
   }
 });
