@@ -49,69 +49,54 @@ const VOLC_CONFIG = {
 
 app.post('/upload-base64', async (req, res) => {
   const { audioData } = req.body;
-  const openid = req.headers['x-wx-openid'] || "user_1";
+  const openid = req.headers['x-wx-openid'] || "user_default";
+
+  // 1. 生成一个本次克隆的唯一 ID (格式要求：S_加上你的自定义后缀)
+  // 注意：这个 ID 建议从你的数据库取，或者用时间戳生成，不能重复
+  const mySpeakerId = `S_${Date.now()}`; 
 
   try {
     const response = await axios.post(
-      'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+      'https://openspeech.bytedance.com/api/v3/tts/voice_clone', // ⭐ 必须是这个 URL
       {
-        app: {
-          appid: VOLC_CONFIG.appid,
-          token: VOLC_CONFIG.token,
-          cluster: "volcano_icl" // 必须是这个集群
+        "speaker_id": mySpeakerId, // ⭐ 必须传一个你定义的 ID
+        "audios": {
+          "data": audioData,       // Base64 数据
+          "format": "mp3"          // 对应你小程序的录音格式
         },
-        user: { uid: openid },
-        audio: { format: "mp3", sample_rate: 16000 },
-        request: {
-          column: 1,
-          text: "这是我的声音克隆测试，请激活我的专属音色。", 
-          // ⭐ 关键点 1：第一次克隆，speaker 必须填固定值
-          speaker: "icl_default", 
-          voice_type: "icl",
-          editing: {
-            // ⭐ 关键点 2：这里的 audio_data 是触发克隆的唯一凭证
-            audio_data: audioData 
-          }
-        }
+        "language": 0,             // 0 代表中文
+        "model_types": [4]         // 4 代表你要的 ICL 2.0 效果
       },
       {
         headers: {
           'Content-Type': 'application/json',
-          'X-Api-App-Id': VOLC_CONFIG.appid,
-          'X-Api-Access-Key': VOLC_CONFIG.token,
-          // ⭐ 关键点 3：这里必须用规格 ID
-          'X-Api-Resource-Id': 'seed-icl-2.0' 
+          'X-Api-App-Key': VOLC_CONFIG.appid,    // ⭐ 文档要求是 App-Key
+          'X-Api-Access-Key': VOLC_CONFIG.token, // 你的 Access Token
+          'X-Api-Resource-Id': VOLC_CONFIG.resource_id // 你的实例 ID
         }
       }
     );
 
-    console.log('火山引擎返回内容:', JSON.stringify(response.data));
+    console.log('火山引擎克隆返回:', JSON.stringify(response.data));
 
-    if (response.data.addition && response.data.addition.speaker_id) {
-       // 成功后，你会拿到一个新的 speaker_id (例如：S_xxxx)
-       const newSpeakerId = response.data.addition.speaker_id;
-       
-       // 存入数据库
+    // 状态码 2 代表训练成功，4 代表已激活
+    if (response.data.status === 2 || response.data.status === 4) {
+       // 存储到数据库
        await UserVoice.create({
          openid: openid,
-         voiceName: "自定义音色",
-         speakerId: newSpeakerId,
+         voiceName: "我的新声音",
+         speakerId: mySpeakerId, // 以后合成就用这个 ID
          status: 1
        });
-
-       res.send({ success: true, speakerId: newSpeakerId });
+       res.send({ success: true, speakerId: mySpeakerId });
     } else {
-       res.send({ success: false, msg: response.data.message });
+       res.send({ success: false, msg: response.data.message || '克隆中或排队中', code: response.data.status });
     }
   } catch (err) {
-    // ⭐ 核心调试逻辑：打印出详细的 Axios 错误
     if (err.response) {
-      console.error("火山接口报错 (Status):", err.response.status);
-      console.error("火山接口报错 (Data):", JSON.stringify(err.response.data));
-    } else {
-      console.error("网络层错误:", err.message);
+      console.error("报错详情:", JSON.stringify(err.response.data));
     }
-    res.status(500).send({ success: false, msg: '后端转发失败', detail: err.message });
+    res.status(500).send({ success: false, msg: '克隆请求失败' });
   }
 });
 
