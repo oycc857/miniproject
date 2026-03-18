@@ -44,7 +44,7 @@ const VOLC_CONFIG = {
   appid: '2480093223',
   token: 'caZWuEhKg2TWjHZWXFznm5GPWOr21AqL',
   // 重点：如果长串实例ID报错，请尝试这个固定代号
-  resource_id: 'TTS-SeedICL2.02000000652173615426' 
+  resource_id: 'seed-icl-2.0' 
 };
 
 app.post('/upload-base64', async (req, res) => {
