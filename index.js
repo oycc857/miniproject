@@ -39,77 +39,58 @@ const UserVoice = sequelize.define('UserVoice', {
 }, { tableName: 'UserVoices', timestamps: true });
 
 // --- 核心修复：上传并克隆接口 ---
-// --- 核心修复：V3 声音复刻接口 ---
+// 这里的配置请严格对照你的控制台
+const VOLC_CONFIG = {
+  appid: '2480093223',
+  token: 'f5ddfac5-3690-4dca-a009-7896797bafa6',
+  // 重点：如果长串实例ID报错，请尝试这个固定代号
+  resource_id: 'seed-icl-2.0' 
+};
+
 app.post('/upload-base64', async (req, res) => {
   const { audioData, openid } = req.body;
-  if (!audioData) return res.status(400).send({ success: false, msg: '音频为空' });
 
   try {
-    // 根据你提供的文档，声音复刻 2.0 字符版资源 ID 为 seed-icl-2.0
-    // 请求路径为 api/v3/tts/unidirectional
-    const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
-
-    // 构造 V3 协议要求的请求体
-    const requestData = {
-      app: {
-        appid: process.env.VOLC_APPID,
-        token: process.env.VOLC_AK, // 此处对应 X-Api-Access-Key
-        cluster: "volcano_icl" // 声音复刻通常固定为此集群名，请根据控制台确认
+    const response = await axios.post(
+      'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+      {
+        app: {
+          appid: VOLC_CONFIG.appid,
+          token: VOLC_CONFIG.token,
+          cluster: "volcano_icl" // 2.0复刻固定集群
+        },
+        user: { uid: openid || "user_1" },
+        audio: { format: "mp3", sample_rate: 16000 },
+        request: {
+          column: 1,
+          text: "这里填一段话，火山会用你克隆出的声音把这段话读出来", 
+          speaker: "icl_default", // 第一次复刻填这个，它会自动生成新音色
+          voice_type: "icl",
+          editing: {
+            audio_data: audioData // 这就是你的“上传”动作，直接传base64
+          }
+        }
       },
-      user: {
-        uid: openid || "guest_user"
-      },
-      audio: {
-        format: "mp3",
-        sample_rate: 16000
-      },
-      // 声音复刻的关键参数：提供参考音频
-      request: {
-        column: 1,
-        text: "这是用于声音复刻训练的示例文本", // 某些版本需要一段文本触发
-        speaker: "icl_default", 
-        voice_type: "icl",
-        // 将你的参考音频 Base64 放入
-        editing: {
-          audio_data: audioData 
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-App-Id': VOLC_CONFIG.appid,
+          'X-Api-Access-Key': VOLC_CONFIG.token,
+          'X-Api-Resource-Id': VOLC_CONFIG.resource_id
         }
       }
-    };
+    );
 
-    const response = await axios.post(url, requestData, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-App-Id': process.env.VOLC_APPID,
-        'X-Api-Access-Key': process.env.VOLC_AK,
-        'X-Api-Resource-Id': 'TTS-SeedICL2.02000000652173615426' // 声音复刻 2.0 资源 ID
-      },
-      timeout: 60000
-    });
-
-    console.log('火山 V3 返回:', response.data);
-
-    // V3 接口返回结果通常在 addition 或是 data 字段中
-    if (response.data && response.data.addition && response.data.addition.speaker_id) {
-      const speakerId = response.data.addition.speaker_id;
-      
-      await UserVoice.create({
-        openid: openid,
-        speakerId: speakerId,
-        status: 0
-      });
-
-      res.send({ success: true, speakerId: speakerId });
+    // 如果成功，火山会返回 addition.speaker_id
+    if (response.data.addition && response.data.addition.speaker_id) {
+       const newSpeakerId = response.data.addition.speaker_id;
+       // 把这个 newSpeakerId 存入你的数据库，以后用这个声音就靠它了
+       res.send({ success: true, speakerId: newSpeakerId });
     } else {
-      res.send({ 
-        success: false, 
-        msg: response.data.message || '复刻请求未生成 SpeakerId' 
-      });
+       res.send({ success: false, msg: response.data.message });
     }
-
   } catch (err) {
-    const errInfo = err.response ? JSON.stringify(err.response.data) : err.message;
-    console.error('V3接口调用失败:', errInfo);
-    res.status(500).send({ success: false, msg: '火山V3接口报错', debug: errInfo });
+    res.status(500).send({ success: false, msg: '调用失败' });
   }
 });
 
