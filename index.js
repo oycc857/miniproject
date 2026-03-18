@@ -117,7 +117,10 @@ app.post('/login', async (req, res) => {
     }
     res.json({ success: true, data: user });
   } catch (err) {
-    res.status(500).json({ success: false, msg: '数据库错误' });
+    if (err.response) {
+      console.error("火山接口报错 (Data):", JSON.stringify(err.response.data));
+    }
+    res.status(500).send({ success: false, msg: '克隆请求失败' });
   }
 });
 
