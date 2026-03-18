@@ -7,8 +7,8 @@ const { Sequelize, DataTypes } = require('sequelize');
 const app = express();
 const upload = multer({ dest: '/tmp/' });
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
 // --- 数据库连接修正 ---
 const sequelize = new Sequelize(
@@ -133,5 +133,8 @@ app.get('/get_voices', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 80;
-app.listen(PORT, () => console.log(`🚀 服务运行在端口: ${PORT}`));
+const port = process.env.PORT || 80;
+app.listen(port, () => {
+  console.log('Server running on port', port);
+  sequelize.sync(); // 同步数据库表
+});
