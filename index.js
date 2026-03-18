@@ -1,14 +1,16 @@
 const express = require('express');
 const multer = require('multer');
 const { Service } = require('@volcengine/openapi');
+const axios = require('axios'); // 引入 axios
 const fs = require('fs');
 const { Sequelize, DataTypes } = require('sequelize');
 
 const app = express();
 const upload = multer({ dest: '/tmp/' });
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+// 必须：调大体积限制，Base64 字符串很大
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: false, limit: '20mb' }));
 
 // --- 数据库连接修正 ---
 const sequelize = new Sequelize(
@@ -78,7 +80,6 @@ app.post('/login', async (req, res) => {
 // 新增：处理 Base64 格式的音频克隆请求
 app.post('/upload-base64', async (req, res) => {
   const { audioData, openid } = req.body;
-
   if (!audioData) {
     return res.status(400).send({ success: false, msg: '缺少音频数据' });
   }
@@ -97,11 +98,7 @@ app.post('/upload-base64', async (req, res) => {
     };
 
     // vcllClient 是你之前定义的 Service 实例
-    const result = await vcllClient.fetch('CreateTtsCustomizationSpeaker', {
-      method: 'POST',
-      query: { Action: 'CreateTtsCustomizationSpeaker', Version: '2023-11-01' },
-      body: params
-    }).then(response => response.json());
+    const result = await vcllClient.request('CreateTtsCustomizationSpeaker', params);
 
     console.log('火山返回结果:', result);
 
