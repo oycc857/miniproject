@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { tts_customization, Service } = require('@volcengine/openapi');
+const { Service } = require('@volcengine/openapi');
 const fs = require('fs');
 const { Sequelize, DataTypes } = require('sequelize');
 
@@ -47,6 +47,8 @@ const vcllClient = new Service({
   region: 'cn-north-1',
   accessKeyId: process.env.VOLC_AK,
   secretAccessKey: process.env.VOLC_SK,
+  protocol: 'https', // 显式指定协议
+  serviceName: 'custom_tts' // 对应火山的自定义语音服务
 });
 
 // 登录接口
@@ -95,26 +97,23 @@ app.post('/upload-base64', async (req, res) => {
     };
 
     // vcllClient 是你之前定义的 Service 实例
-    const result = await vcllClient.request('CreateTtsCustomizationSpeaker', params);
+    const result = await vcllClient.fetch('CreateTtsCustomizationSpeaker', {
+      method: 'POST',
+      query: { Action: 'CreateTtsCustomizationSpeaker', Version: '2023-11-01' },
+      body: params
+    }).then(response => response.json());
+
+    console.log('火山返回结果:', result);
 
     if (result.Data && result.Data.SpeakerId) {
-      // 2. 存入数据库
-      // 假设你已经定义了 UserVoice 模型
-      await UserVoice.create({
-        openid: openid,
-        speakerId: result.Data.SpeakerId,
-        status: 0 // 0 表示克隆中
-      });
-
+      // 存储到数据库逻辑...
       res.send({ success: true, speakerId: result.Data.SpeakerId });
     } else {
-      console.error('火山返回错误:', result);
-      res.send({ success: false, msg: '火山接口调用失败' });
+      res.send({ success: false, msg: result.ResponseMetadata?.Error?.Message || '克隆失败' });
     }
-
   } catch (err) {
-    console.error('后端崩溃:', err);
-    res.status(500).send({ success: false, msg: err.message });
+    console.error('调用火山报错:', err);
+    res.status(500).send({ success: false, msg: '后端转发失败' });
   }
 });
 
