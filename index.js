@@ -42,9 +42,9 @@ const UserVoice = sequelize.define('UserVoice', {
 // 这里的配置请严格对照你的控制台
 const VOLC_CONFIG = {
   appid: '2480093223',
-  token: 'f5ddfac5-3690-4dca-a009-7896797bafa6',
+  token: 'caZWuEhKg2TWjHZWXFznm5GPWOr21AqL',
   // 重点：如果长串实例ID报错，请尝试这个固定代号
-  resource_id: 'seed-icl-2.0' 
+  resource_id: 'TTS-SeedICL2.02000000652173615426' 
 };
 
 app.post('/upload-base64', async (req, res) => {
