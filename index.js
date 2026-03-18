@@ -48,27 +48,31 @@ const VOLC_CONFIG = {
 };
 
 app.post('/upload-base64', async (req, res) => {
-  const { audioData, openid } = req.body;
+  const openid = req.headers['x-wx-openid'];
+  const { audioData } = req.body;
+
+  // 调试日志：检查收到的数据
+  console.log('--- 收到上传请求 ---');
+  console.log('OpenID:', openid);
+  console.log('数据长度:', audioData ? audioData.length : 0);
+
+  if (!audioData) {
+    return res.status(400).send({ success: false, msg: '音频数据为空' });
+  }
 
   try {
     const response = await axios.post(
       'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
       {
-        app: {
-          appid: VOLC_CONFIG.appid,
-          token: VOLC_CONFIG.token,
-          cluster: "volcano_icl" // 2.0复刻固定集群
-        },
-        user: { uid: openid || "user_1" },
+        app: { appid: VOLC_CONFIG.appid, token: VOLC_CONFIG.token, cluster: "volcano_icl" },
+        user: { uid: openid || "user_default" },
         audio: { format: "mp3", sample_rate: 16000 },
         request: {
           column: 1,
-          text: "这里填一段话，火山会用你克隆出的声音把这段话读出来", 
-          speaker: "icl_default", // 第一次复刻填这个，它会自动生成新音色
+          text: "语音克隆激活测试。", 
+          speaker: "icl_default", 
           voice_type: "icl",
-          editing: {
-            audio_data: audioData // 这就是你的“上传”动作，直接传base64
-          }
+          editing: { audio_data: audioData }
         }
       },
       {
@@ -77,20 +81,27 @@ app.post('/upload-base64', async (req, res) => {
           'X-Api-App-Id': VOLC_CONFIG.appid,
           'X-Api-Access-Key': VOLC_CONFIG.token,
           'X-Api-Resource-Id': VOLC_CONFIG.resource_id
-        }
+        },
+        timeout: 30000 // 后端也给 30 秒超时
       }
     );
 
-    // 如果成功，火山会返回 addition.speaker_id
+    console.log('火山引擎返回内容:', JSON.stringify(response.data));
+
     if (response.data.addition && response.data.addition.speaker_id) {
-       const newSpeakerId = response.data.addition.speaker_id;
-       // 把这个 newSpeakerId 存入你的数据库，以后用这个声音就靠它了
-       res.send({ success: true, speakerId: newSpeakerId });
+       res.send({ success: true, speakerId: response.data.addition.speaker_id });
     } else {
-       res.send({ success: false, msg: response.data.message });
+       res.send({ success: false, msg: response.data.message || '火山接口返回业务错误' });
     }
   } catch (err) {
-    res.status(500).send({ success: false, msg: '调用失败' });
+    // ⭐ 核心调试逻辑：打印出详细的 Axios 错误
+    if (err.response) {
+      console.error("火山接口报错 (Status):", err.response.status);
+      console.error("火山接口报错 (Data):", JSON.stringify(err.response.data));
+    } else {
+      console.error("网络层错误:", err.message);
+    }
+    res.status(500).send({ success: false, msg: '后端转发失败', detail: err.message });
   }
 });
 
