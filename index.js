@@ -39,60 +39,77 @@ const UserVoice = sequelize.define('UserVoice', {
 }, { tableName: 'UserVoices', timestamps: true });
 
 // --- 核心修复：上传并克隆接口 ---
+// --- 核心修复：V3 声音复刻接口 ---
 app.post('/upload-base64', async (req, res) => {
   const { audioData, openid } = req.body;
-  if (!audioData) return res.status(400).send({ success: false, msg: '缺少音频数据' });
+  if (!audioData) return res.status(400).send({ success: false, msg: '音频为空' });
 
   try {
-    // 1. 构造请求体（根据 2023-11-07 版本要求）
-    const requestBody = {
-      AppID: process.env.VOLC_APPID, // 注意部分版本 AppID 大写
-      ServiceId: process.env.VOLC_SERVICE_ID,
-      SpeakerName: `user_${openid ? openid.slice(-5) : 'test'}`,
-      AudioFormat: 'mp3',
-      SampleRate: 16000,
-      AudioData: audioData 
+    // 根据你提供的文档，声音复刻 2.0 字符版资源 ID 为 seed-icl-2.0
+    // 请求路径为 api/v3/tts/unidirectional
+    const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+
+    // 构造 V3 协议要求的请求体
+    const requestData = {
+      app: {
+        appid: process.env.VOLC_APPID,
+        token: process.env.VOLC_AK, // 此处对应 X-Api-Access-Key
+        cluster: "volcano_icl" // 声音复刻通常固定为此集群名，请根据控制台确认
+      },
+      user: {
+        uid: openid || "guest_user"
+      },
+      audio: {
+        format: "mp3",
+        sample_rate: 16000
+      },
+      // 声音复刻的关键参数：提供参考音频
+      request: {
+        column: 1,
+        text: "这是用于声音复刻训练的示例文本", // 某些版本需要一段文本触发
+        speaker: "icl_default", 
+        voice_type: "icl",
+        // 将你的参考音频 Base64 放入
+        editing: {
+          audio_data: audioData 
+        }
+      }
     };
 
-    // 2. ⭐ 核心修正：将 Action, Version, Service, Region 全部挂载到 URL 参数中
-    // 这是火山 OpenAPI 网关路由的“准考证”
-    const volcUrl = 'https://openspeech.bytedance.com/api/v1/tts_customization' + 
-                   '?Action=CreateTtsCustomizationSpeaker' + 
-                   '&Version=2023-11-07' + // 使用你提供的固定版本
-                   '&Service=speech_saas_prod' + // 指定服务名
-                   '&Region=cn-north-1'; // 指定华北区域
-
-    console.log('正在发送V3规范请求:', volcUrl);
-
-    const volcResponse = await axios.post(volcUrl, requestBody, {
+    const response = await axios.post(url, requestData, {
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        // 额外补强：在 Header 中也带上这些标识，确保网关 100% 识别
-        'X-Top-Service': 'speech_saas_prod',
-        'X-Top-Region': 'cn-north-1'
+        'Content-Type': 'application/json',
+        'X-Api-App-Id': process.env.VOLC_APPID,
+        'X-Api-Access-Key': process.env.VOLC_AK,
+        'X-Api-Resource-Id': 'seed-icl-2.0' // 声音复刻 2.0 资源 ID
       },
-      timeout: 45000 
+      timeout: 60000
     });
 
-    const result = volcResponse.data;
-    console.log('火山返回结果:', JSON.stringify(result));
+    console.log('火山 V3 返回:', response.data);
 
-    if (result.Data && result.Data.SpeakerId) {
+    // V3 接口返回结果通常在 addition 或是 data 字段中
+    if (response.data && response.data.addition && response.data.addition.speaker_id) {
+      const speakerId = response.data.addition.speaker_id;
+      
       await UserVoice.create({
         openid: openid,
-        speakerId: result.Data.SpeakerId,
-        status: 0 // 状态：训练中
+        speakerId: speakerId,
+        status: 0
       });
-      res.send({ success: true, speakerId: result.Data.SpeakerId });
+
+      res.send({ success: true, speakerId: speakerId });
     } else {
-      // 捕获具体的业务错误码
-      const errorMsg = result.ResponseMetadata?.Error?.Message || '火山业务逻辑错误';
-      res.send({ success: false, msg: errorMsg });
+      res.send({ 
+        success: false, 
+        msg: response.data.message || '复刻请求未生成 SpeakerId' 
+      });
     }
+
   } catch (err) {
-    const errorDetail = err.response ? JSON.stringify(err.response.data) : err.message;
-    console.error('后端调用火山崩溃:', errorDetail);
-    res.status(500).send({ success: false, msg: '网关连接失败', debug: errorDetail });
+    const errInfo = err.response ? JSON.stringify(err.response.data) : err.message;
+    console.error('V3接口调用失败:', errInfo);
+    res.status(500).send({ success: false, msg: '火山V3接口报错', debug: errInfo });
   }
 });
 
