@@ -81,7 +81,7 @@ app.post('/upload-base64', async (req, res) => {
         'Content-Type': 'application/json',
         'X-Api-App-Id': process.env.VOLC_APPID,
         'X-Api-Access-Key': process.env.VOLC_AK,
-        'X-Api-Resource-Id': 'seed-icl-2.0' // 声音复刻 2.0 资源 ID
+        'X-Api-Resource-Id': 'TTS-SeedICL2.02000000652173615426' // 声音复刻 2.0 资源 ID
       },
       timeout: 60000
     });
