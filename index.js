@@ -73,66 +73,48 @@ app.post('/login', async (req, res) => {
 });
 
 // 上传并克隆接口
-app.post('/upload', upload.single('voiceFile'), async (req, res) => {
-  // 优先从 header 获取微信 OpenID
-  console.log("收到了nmnmnmnmnmn'");
-  const openid = req.headers['x-wx-openid'] || req.body.openid;
-  const file = req.file;
+// 新增：处理 Base64 格式的音频克隆请求
+app.post('/upload-base64', async (req, res) => {
+  const { audioData, openid } = req.body;
 
-  if (!file || !openid) return res.status(400).send({ success: false, msg: '参数不足' });
+  if (!audioData) {
+    return res.status(400).send({ success: false, msg: '缺少音频数据' });
+  }
 
   try {
-    const audioBase64 = fs.readFileSync(file.path).toString('base64');
-
-    // --- 核心修改：匹配官方文档 2227958 的参数 ---
+    // 1. 直接将 Base64 发送给火山引擎（火山 API 本身就支持 Base64）
     const params = {
-      // 公共参数
-      Action: 'CreateTtsCustomizationSpeaker', // 极速克隆的 Action 名称
+      Action: 'CreateTtsCustomizationSpeaker',
       Version: '2023-11-01',
-      
-      // 业务参数
       Appid: process.env.VOLC_APPID,
-      ServiceId: process.env.VOLC_SERVICE_ID, // 必须填这个，文档要求的
-      SpeakerName: `user_${openid.slice(-5)}`,
-      Description: "小程序用户声音克隆",
-      
-      // 音频数据
-      AudioData: audioBase64,
-      // 根据文档，通常需要指定音频格式，默认常用 mp3 或 wav
-      AudioFormat: 'mp3', 
-      // 采样率建议与你小程序录音设置的一致（比如 16000）
-      SampleRate: 16000 
+      ServiceId: process.env.VOLC_SERVICE_ID, // 也就是你截图里的 VoiceCloning2000...
+      SpeakerName: `user_${openid ? openid.slice(-5) : 'test'}`,
+      AudioFormat: 'mp3',
+      SampleRate: 16000,
+      AudioData: audioData // 直接把前端传来的 base64 塞进去
     };
 
-    // 使用 SDK 发起请求
-    // 注意：vcllClient 需要在初始化时指定 host 为 'openspeech.bytedance.com'
+    // vcllClient 是你之前定义的 Service 实例
     const result = await vcllClient.request('CreateTtsCustomizationSpeaker', params);
 
-    // 记录到数据库
-    await UserVoice.sync();
-    await UserVoice.create({ 
-        openid: openid, 
-        voiceName: '我的克隆声音',
-        // 文档返回的通常是 SpeakerId 或 TaskId
-        speakerId: result.Data.SpeakerId || '', 
-        status: 0 // 0 表示正在训练/同步
-    });
+    if (result.Data && result.Data.SpeakerId) {
+      // 2. 存入数据库
+      // 假设你已经定义了 UserVoice 模型
+      await UserVoice.create({
+        openid: openid,
+        speakerId: result.Data.SpeakerId,
+        status: 0 // 0 表示克隆中
+      });
 
-    res.send({ 
-        success: true, 
-        msg: '提交成功，正在生成 AI 声音', 
-        data: result.Data 
-    });
+      res.send({ success: true, speakerId: result.Data.SpeakerId });
+    } else {
+      console.error('火山返回错误:', result);
+      res.send({ success: false, msg: '火山接口调用失败' });
+    }
 
   } catch (err) {
-    console.error('火山克隆接口调用失败:', err);
-    res.status(500).send({ 
-        success: false, 
-        msg: '接口调用失败', 
-        error: err.message 
-    });
-  } finally {
-    if (file) fs.unlinkSync(file.path);
+    console.error('后端崩溃:', err);
+    res.status(500).send({ success: false, msg: err.message });
   }
 });
 
