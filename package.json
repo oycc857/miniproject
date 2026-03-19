@@ -10,7 +10,7 @@
     "crypto": "^1.0.1",
     "mysql2": "^2.3.3",
     "sequelize": "^6.6.5",
-    "ali-oss": "^6.x.x"
+    "ali-oss": "^6.21.0"
   },
   "scripts": {
     "start": "node index.js"
