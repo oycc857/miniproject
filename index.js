@@ -11,6 +11,7 @@ app.use(express.urlencoded({ extended: false })); // 解析 URL 编码格式
 const VOLC_CONFIG = {
   appid: '4870175430',
   token: 'M-4FC8-xLI8dfRwC3MLSibGCg58TVedJ',
+  license: '4870175430',
   host: 'https://openspeech.bytedance.com'
 };
 
@@ -68,33 +69,34 @@ if (!audioUrl) {
   const spk_id = `spk_${openid.substring(0, 8)}_${Date.now()}`;
 
   try {
-    // 1. 下载微信云存储中的音频文件并转为 Buffer
     // 1. 下载音频转为 Base64（对应官方 Python 逻辑）
     const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
     const base64Audio = Buffer.from(audioRes.data).toString('base64');
     const audioFormat = audioUrl.split('.').pop().split('?')[0] || 'mp3';
 
-    // 4. 调用火山引擎 Mega-TTS 接口
-    const volcUrl = `${VOLC_CONFIG.host}/api/v1/mega_tts/audio/upload`;
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer;" + VOLC_CONFIG.token,
-      "Resource-Id": "volc.megatts.voiceclone" // 核心头信息 
-    };
-
-    const requestBody = {
-      appid: VOLC_CONFIG.appid,
-      speaker_id: spk_id,
-      audios: [{
-        audio_bytes: base64Audio,
-        audio_format: audioFormat
-      }],
-      source: 2,      // 对应你的 Python 代码参数 
-      language: 0, 
-      model_type: 1
-    };
-
-    const response = await axios.post(volcUrl, requestBody, { headers });
+    // 2. 调用火山引擎 Mega-TTS 接口
+    const response = await axios.post(
+      `${VOLC_CONFIG.host}/api/v1/mega_tts/audio/upload`,
+      {
+        appid: VOLC_CONFIG.appid,
+        speaker_id: spk_id,
+        license: VOLC_CONFIG.license, // 👈 传给 body 里的这个字段
+        audios: [{
+          audio_bytes: base64Audio,
+          audio_format: audioFormat
+        }],
+        source: 2,
+        language: 0,
+        model_type: 1
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer;" + VOLC_CONFIG.token,
+          "Resource-Id": "volc.megatts.voiceclone"
+        }
+      }
+    );
 
     if (response.status === 200) {
       // 5. 写入数据库，记录 speakerId 以便后续查询状态
