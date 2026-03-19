@@ -104,7 +104,8 @@ app.get('/get_voices', async (req, res) => {
     });
     res.json({ success: true, list: voices });
   } catch (err) {
-    res.status(500).json({ success: false, msg: '查询失败' });
+    console.error('get_voices 失败:', err);
+  res.status(500).json({ success: false, msg: err.message }); // 👈 改这里
   }
 });
 
