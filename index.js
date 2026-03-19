@@ -1,18 +1,19 @@
 const express = require('express');
 const axios = require('axios');
 const { Sequelize, DataTypes } = require('sequelize');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const OSS = require('ali-oss');
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// 用于临时存放音频文件，供阿里云下载
-// 微信云存储的临时链接阿里云无法访问，需要中转
-const TEMP_DIR = os.tmpdir();
-app.use('/temp_audio', express.static(TEMP_DIR));
+// OSS 客户端（需在云托管环境变量里设置这四个值）
+const ossClient = new OSS({
+  region:          process.env.OSS_REGION          || 'oss-cn-beijing',
+  accessKeyId:     process.env.OSS_ACCESS_KEY_ID   || '你的AccessKeyId',
+  accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '你的AccessKeySecret',
+  bucket:          process.env.OSS_BUCKET          || '你的BucketName'
+});
 
 // ====================================================
 // 1. 阿里云百炼配置
@@ -113,7 +114,7 @@ app.post('/start_clone', async (req, res) => {
     return res.status(400).json({ success: false, msg: '参数不足' });
   }
 
-  let tempFilePath = null;
+  let ossKey = null;
 
   try {
     // 防止同一用户重复提交
@@ -125,22 +126,19 @@ app.post('/start_clone', async (req, res) => {
       });
     }
 
-    // ── 核心：把音频下载到后端服务器，再用后端公网地址给阿里云 ──
-    // 原因：阿里云服务器无法访问微信云存储的临时链接
+    // 1. 下载音频文件到内存
     const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-    const fileName = `audio_${openid.slice(-6)}_${Date.now()}.mp3`;
-    tempFilePath = path.join(TEMP_DIR, fileName);
-    fs.writeFileSync(tempFilePath, Buffer.from(audioRes.data));
+    const audioBuffer = Buffer.from(audioRes.data);
 
-    // 构建后端自身的公网地址供阿里云访问
-    // 微信云托管会注入 HOST 环境变量，或者用 req.headers.host
-    const host = process.env.SERVER_HOST || req.headers['x-forwarded-host'] || req.headers.host;
-    const publicAudioUrl = `https://${host}/temp_audio/${fileName}`;
+    // 2. 上传到阿里云 OSS（阿里云自己可以访问 OSS，URL 干净无问题）
+    ossKey = `temp_voices/${openid.slice(-6)}_${Date.now()}.mp3`;
+    await ossClient.put(ossKey, audioBuffer);
+    const ossUrl = `https://${process.env.OSS_BUCKET || '你的BucketName'}.${process.env.OSS_REGION || 'oss-cn-beijing'}.aliyuncs.com/${ossKey}`;
 
-    // 生成唯一前缀（只能小写字母+数字，小于10字符）
+    // 3. 生成唯一前缀
     const prefix = 'u' + openid.slice(-6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
 
-    // 调用阿里云声音复刻接口（免费）
+    // 4. 调用阿里云声音复刻（用 OSS URL，同一家公司必然可访问）
     const response = await axios.post(
       `${ALIYUN_CONFIG.host}/api/v1/services/audio/tts/customization`,
       {
@@ -148,7 +146,7 @@ app.post('/start_clone', async (req, res) => {
         input: {
           action:       'create_voice',
           target_model: ALIYUN_CONFIG.model,
-          url:          publicAudioUrl,  // 用后端自己的地址，阿里云可访问
+          url:          ossUrl,
           prefix:       prefix
         }
       },
@@ -160,8 +158,8 @@ app.post('/start_clone', async (req, res) => {
       }
     );
 
-    // 阿里云拿完文件后删除临时文件
-    try { fs.unlinkSync(tempFilePath); } catch(e) {}
+    // 5. 克隆提交后删除 OSS 临时文件（异步，不等结果）
+    ossClient.delete(ossKey).catch(e => console.log('删除OSS临时文件失败(忽略):', e.message));
 
     if (response.data.output && response.data.output.voice_id) {
       const voiceId = response.data.output.voice_id;
@@ -181,8 +179,7 @@ app.post('/start_clone', async (req, res) => {
       });
     }
   } catch (err) {
-    // 出错也清理临时文件
-    if (tempFilePath) try { fs.unlinkSync(tempFilePath); } catch(e) {}
+    if (ossKey) ossClient.delete(ossKey).catch(() => {});
     console.error('start_clone 异常:', err.response?.data || err.message);
     res.status(500).json({
       success: false,
@@ -261,13 +258,13 @@ app.post('/retrain_voice', async (req, res) => {
 
     const prefix = 'u' + openid.slice(-6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
 
-    // 下载音频到后端做中转（微信临时链接阿里云无法访问）
+    // 下载音频并上传到 OSS，供阿里云访问
     const audioRes2 = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-    const fileName2 = `retrain_${openid.slice(-6)}_${Date.now()}.mp3`;
-    const tempPath2 = path.join(TEMP_DIR, fileName2);
-    fs.writeFileSync(tempPath2, Buffer.from(audioRes2.data));
-    const host2 = process.env.SERVER_HOST || req.headers['x-forwarded-host'] || req.headers.host;
-    const publicUrl2 = `https://${host2}/temp_audio/${fileName2}`;
+    const ossKey2 = `temp_voices/retrain_${openid.slice(-6)}_${Date.now()}.mp3`;
+    await ossClient.put(ossKey2, Buffer.from(audioRes2.data));
+    const bucket = process.env.OSS_BUCKET || '你的BucketName';
+    const region = process.env.OSS_REGION || 'oss-cn-beijing';
+    const ossUrl2 = `https://${bucket}.${region}.aliyuncs.com/${ossKey2}`;
 
     const response = await axios.post(
       `${ALIYUN_CONFIG.host}/api/v1/services/audio/tts/customization`,
@@ -276,7 +273,7 @@ app.post('/retrain_voice', async (req, res) => {
         input: {
           action:       'create_voice',
           target_model: ALIYUN_CONFIG.model,
-          url:          publicUrl2,
+          url:          ossUrl2,
           prefix:       prefix
         }
       },
@@ -288,7 +285,7 @@ app.post('/retrain_voice', async (req, res) => {
       }
     );
 
-    try { fs.unlinkSync(tempPath2); } catch(e) {}
+    ossClient.delete(ossKey2).catch(() => {});
 
     if (response.data.output && response.data.output.voice_id) {
       const newVoiceId = response.data.output.voice_id;
