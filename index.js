@@ -49,9 +49,21 @@ const UserVoice = sequelize.define('UserVoice', {
 app.post('/start_clone', async (req, res) => {
   const openid = req.headers['x-wx-openid'];
   const { audioUrl, voiceName } = req.body;
-
-  if (!openid || !audioUrl) return res.status(400).json({ success: false, msg: '参数不全' });
-
+// --- 调试日志：如果报错，请去云托管控制台看这里的打印 ---
+console.log('[收到请求] Body:', req.body);
+console.log('[收到请求] Headers中的OpenID:', openid);
+if (!openid) {
+  return res.status(400).json({ 
+    success: false, 
+    msg: '参数不全: 未获取到微信身份(openid)，请检查是否通过云托管正常调用' 
+  });
+}
+if (!audioUrl) {
+  return res.status(400).json({ 
+    success: false, 
+    msg: '参数不全: 缺少音频下载链接(audioUrl)' 
+  });
+}
   // 在 Mega-TTS 中，你可以为用户生成一个唯一的 speaker_id
   const spk_id = `spk_${openid.substring(0, 8)}_${Date.now()}`;
 
