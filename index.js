@@ -7,6 +7,13 @@ const app = express();
 app.use(express.json()); // 解析 JSON 格式的请求体
 app.use(express.urlencoded({ extended: false })); // 解析 URL 编码格式
 
+// 1--- 火山引擎配置 (请替换为你自己的) ---
+const VOLC_CONFIG = {
+  appid: '4870175430',
+  token: 'M-4FC8-xLI8dfRwC3MLSibGCg58TVedJ',
+  host: 'https://openspeech.bytedance.com'
+};
+
 // 2. 数据库连接（保持你原有的配置）
 const sequelize = new Sequelize(
   process.env.MYSQL_DATABASE || 'nodejs_demo',
@@ -25,7 +32,9 @@ const sequelize = new Sequelize(
 const User = sequelize.define('Users', {
   openid: { type: DataTypes.STRING, allowNull: false, unique: true },
   nickName: { type: DataTypes.STRING, defaultValue: '微信用户' },
-  avatarUrl: { type: DataTypes.STRING, defaultValue: '' }
+  avatarUrl: { type: DataTypes.STRING, defaultValue: '' },
+  speakerId: DataTypes.STRING, // Mega-TTS 中由你指定或返回的 ID
+  status: { type: DataTypes.INTEGER, defaultValue: 0 },
 }, { tableName: 'Users', timestamps: true });
 
 const UserVoice = sequelize.define('UserVoice', {
@@ -36,7 +45,73 @@ const UserVoice = sequelize.define('UserVoice', {
   status: { type: DataTypes.INTEGER, defaultValue: 0 }, 
 }, { tableName: 'UserVoices', timestamps: true });
 
+// --- 【核心逻辑】上传并训练 ---
+app.post('/start_clone', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  const { audioUrl, voiceName } = req.body;
 
+  if (!openid || !audioUrl) return res.status(400).json({ success: false, msg: '参数不全' });
+
+  // 在 Mega-TTS 中，你可以为用户生成一个唯一的 speaker_id
+  const spk_id = `spk_${openid.substring(0, 8)}_${Date.now()}`;
+
+  try {
+    // 1. 下载微信云存储中的音频文件并转为 Buffer
+    const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+    const audioBuffer = Buffer.from(audioResponse.data);
+    
+    // 2. 将 Buffer 转为 Base64 (对应 Python 代码中的 encoded_data)
+    const base64Audio = audioBuffer.toString('base64');
+    
+    // 3. 获取文件后缀 (对应 Python 中的 audio_format)
+    // 微信音频通常是 .m4a 或 .mp3
+    const audioFormat = audioUrl.split('.').pop().split('?')[0] || 'mp3';
+
+    // 4. 调用火山引擎 Mega-TTS 接口
+    const volcUrl = `${VOLC_CONFIG.host}/api/v1/mega_tts/audio/upload`;
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer;" + VOLC_CONFIG.token,
+      "Resource-Id": "volc.megatts.voiceclone" // 核心头信息 
+    };
+
+    const requestBody = {
+      appid: VOLC_CONFIG.appid,
+      speaker_id: spk_id,
+      audios: [{
+        audio_bytes: base64Audio,
+        audio_format: audioFormat
+      }],
+      source: 2,      // 对应你的 Python 代码参数 
+      language: 0, 
+      model_type: 1
+    };
+
+    const response = await axios.post(volcUrl, requestBody, { headers });
+
+    if (response.status === 200) {
+      // 5. 写入数据库，记录 speakerId 以便后续查询状态
+      await UserVoice.create({
+        openid,
+        voiceName: voiceName || 'AI分身',
+        speakerId: spk_id,
+        status: 0
+      });
+
+      res.json({ success: true, speakerId: spk_id });
+    } else {
+      throw new Error(`火山接口返回状态码: ${response.status}`);
+    }
+
+  } catch (err) {
+    console.error("Mega-TTS 训练请求失败:", err.response?.data || err.message);
+    res.status(500).json({ 
+      success: false, 
+      msg: '训练请求失败', 
+      detail: err.response?.data || err.message 
+    });
+  }
+});
 
 // --- 其他功能路由（完整保留） ---
 app.post('/login', async (req, res) => {
