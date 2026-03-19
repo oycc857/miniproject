@@ -7,8 +7,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // ====================================================
-// 1. 阿里云百炼配置
+// 1. 双平台配置
+// 公共音色库 TTS -> 火山引擎（便宜）
+// 私人音色克隆   -> 阿里云（免费）
 // ====================================================
+const VOLC_CONFIG = {
+  appid: '2480093223',
+  token: 'caZWuEhKg2TWjHZWXFznm5GPWOr21AqL',
+  host:  'https://openspeech.bytedance.com'
+};
+
 const ALIYUN_CONFIG = {
   apiKey: process.env.DASHSCOPE_API_KEY || 'sk-4c4aefb6e8244b27aa100d8fff592607',
   host:   'https://dashscope.aliyuncs.com',
