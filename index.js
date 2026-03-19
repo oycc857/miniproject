@@ -159,11 +159,10 @@ app.post('/start_clone', async (req, res) => {
       }
     );
 
-    // 5. 克隆提交后删除 OSS 临时文件（异步，不等结果）
-    ossClient.delete(ossKey).catch(e => console.log('删除OSS临时文件失败(忽略):', e.message));
-
     if (response.data.output && response.data.output.voice_id) {
       const voiceId = response.data.output.voice_id;
+      // 克隆成功后再删除 OSS 临时文件
+      ossClient.delete(ossKey).catch(e => console.log('删除OSS临时文件失败(忽略):', e.message));
       await UserVoice.create({
         openid,
         voiceName: voiceName || '我的音色',
@@ -173,7 +172,9 @@ app.post('/start_clone', async (req, res) => {
       });
       res.json({ success: true, speakerId: voiceId });
     } else {
-      console.error('阿里云返回错误:', response.data);
+      // 失败也删除 OSS 临时文件
+      ossClient.delete(ossKey).catch(() => {});
+      console.error('阿里云返回错误:', JSON.stringify(response.data));
       res.status(500).json({
         success: false,
         msg: '克隆失败: ' + (response.data.message || JSON.stringify(response.data))
@@ -284,13 +285,14 @@ app.post('/retrain_voice', async (req, res) => {
       }
     );
 
-    ossClient.delete(ossKey2).catch(() => {});
-
     if (response.data.output && response.data.output.voice_id) {
       const newVoiceId = response.data.output.voice_id;
+      ossClient.delete(ossKey2).catch(() => {});
       await voice.update({ speakerId: newVoiceId, audioUrl, status: 0 });
       res.json({ success: true, speakerId: newVoiceId });
     } else {
+      ossClient.delete(ossKey2).catch(() => {});
+      console.error('重训阿里云返回错误:', JSON.stringify(response.data));
       res.status(500).json({ success: false, msg: '重训失败: ' + JSON.stringify(response.data) });
     }
   } catch (err) {
