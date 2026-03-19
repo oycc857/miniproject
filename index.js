@@ -9,17 +9,17 @@ app.use(express.urlencoded({ extended: false }));
 
 // OSS 客户端（需在云托管环境变量里设置这四个值）
 const ossClient = new OSS({
-  region:          process.env.OSS_REGION          || 'oss-cn-beijing',
-  accessKeyId:     process.env.OSS_ACCESS_KEY_ID   || '你的AccessKeyId',
-  accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '你的AccessKeySecret',
-  bucket:          process.env.OSS_BUCKET          || '你的BucketName'
+  region:          process.env.OSS_REGION,
+  accessKeyId:     process.env.OSS_ACCESS_KEY_ID,
+  accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
+  bucket:          process.env.OSS_BUCKET
 });
 
 // ====================================================
 // 1. 阿里云百炼配置
 // ====================================================
 const ALIYUN_CONFIG = {
-  apiKey: process.env.DASHSCOPE_API_KEY || 'sk-4c4aefb6e8244b27aa100d8fff592607',
+  apiKey: process.env.DASHSCOPE_API_KEY,
   host:   'https://dashscope.aliyuncs.com',
   model:  'cosyvoice-v3.5-flash'
 };
@@ -133,7 +133,8 @@ app.post('/start_clone', async (req, res) => {
     // 2. 上传到阿里云 OSS（阿里云自己可以访问 OSS，URL 干净无问题）
     ossKey = `temp_voices/${openid.slice(-6)}_${Date.now()}.mp3`;
     await ossClient.put(ossKey, audioBuffer);
-    const ossUrl = `https://${process.env.OSS_BUCKET || '你的BucketName'}.${process.env.OSS_REGION || 'oss-cn-beijing'}.aliyuncs.com/${ossKey}`;
+    const ossUrl = `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${ossKey}`;
+    console.log('OSS上传成功，URL:', ossUrl);
 
     // 3. 生成唯一前缀
     const prefix = 'u' + openid.slice(-6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
@@ -262,9 +263,7 @@ app.post('/retrain_voice', async (req, res) => {
     const audioRes2 = await axios.get(audioUrl, { responseType: 'arraybuffer' });
     const ossKey2 = `temp_voices/retrain_${openid.slice(-6)}_${Date.now()}.mp3`;
     await ossClient.put(ossKey2, Buffer.from(audioRes2.data));
-    const bucket = process.env.OSS_BUCKET || '你的BucketName';
-    const region = process.env.OSS_REGION || 'oss-cn-beijing';
-    const ossUrl2 = `https://${bucket}.${region}.aliyuncs.com/${ossKey2}`;
+    const ossUrl2 = `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${ossKey2}`;
 
     const response = await axios.post(
       `${ALIYUN_CONFIG.host}/api/v1/services/audio/tts/customization`,
