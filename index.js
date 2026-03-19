@@ -100,7 +100,7 @@ app.get('/get_voices', async (req, res) => {
   try {
     const voices = await UserVoice.findAll({
       where: { openid },
-      order: [['createdAt', 'DESC']]
+      order: [['id', 'DESC']]
     });
     res.json({ success: true, list: voices });
   } catch (err) {
