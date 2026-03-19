@@ -109,29 +109,19 @@ app.get('/get_voices', async (req, res) => {
 });
 
 // 【新增】路由：音色改名
-app.post('/rename_voice', async (req, res) => {
+app.get('/get_voices', async (req, res) => {
   const openid = req.headers['x-wx-openid'];
-  const { id, voiceName } = req.body;
- 
-  if (!id || !voiceName) {
-    return res.status(400).json({ success: false, msg: '参数不足' });
-  }
- 
+  if (!openid) return res.status(401).send('Unauthorized');
   try {
-    // 只能改自己的音色，用 openid 做校验防止越权
-    const [count] = await UserVoice.update(
-      { voiceName },
-      { where: { id, openid } }
-    );
- 
-    if (count === 0) {
-      return res.status(404).json({ success: false, msg: '音色不存在或无权限' });
-    }
- 
-    res.json({ success: true });
+    const voices = await UserVoice.findAll({
+      where: { openid },
+      order: [['createdAt', 'DESC']]
+    });
+    res.json({ success: true, list: voices });
   } catch (err) {
-    console.error('改名失败:', err);
-    res.status(500).json({ success: false, msg: '改名失败' });
+    // 改这里：把真实错误返回出来
+    console.error('get_voices 失败:', err);
+    res.status(500).json({ success: false, msg: err.message }); // 👈 改成 err.message
   }
 });
 
