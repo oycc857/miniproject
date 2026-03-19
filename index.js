@@ -50,75 +50,65 @@ const UserVoice = sequelize.define('UserVoice', {
 app.post('/start_clone', async (req, res) => {
   const openid = req.headers['x-wx-openid'];
   const { audioUrl, voiceName } = req.body;
-// --- 调试日志：如果报错，请去云托管控制台看这里的打印 ---
-console.log('[收到请求] Body:', req.body);
-console.log('[收到请求] Headers中的OpenID:', openid);
-if (!openid) {
-  return res.status(400).json({ 
-    success: false, 
-    msg: '参数不全: 未获取到微信身份(openid)，请检查是否通过云托管正常调用' 
-  });
-}
-if (!audioUrl) {
-  return res.status(400).json({ 
-    success: false, 
-    msg: '参数不全: 缺少音频下载链接(audioUrl)' 
-  });
-}
-  // 在 Mega-TTS 中，你可以为用户生成一个唯一的 speaker_id
-  const spk_id = `spk_${openid.substring(0, 8)}_${Date.now()}`;
+
+  if (!audioUrl || !openid) {
+    return res.status(400).json({ success: false, msg: '参数不足' });
+  }
+
+  // 生成唯一的音色 ID
+  const spk_id = `spk_${openid.slice(-6)}_${Date.now()}`;
 
   try {
-    // 1. 下载音频转为 Base64（对应官方 Python 逻辑）
+    // A. 下载音频并转 Base64
     const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
     const base64Audio = Buffer.from(audioRes.data).toString('base64');
-    const audioFormat = audioUrl.split('.').pop().split('?')[0] || 'mp3';
 
-    // 2. 调用火山引擎 Mega-TTS 接口
+    // B. 调用火山 V3 声音复刻接口
+    // 注意：Resource-Id 在 V3 2.0 中非常关键
     const response = await axios.post(
       `${VOLC_CONFIG.host}/api/v1/mega_tts/audio/upload`,
       {
         appid: VOLC_CONFIG.appid,
         speaker_id: spk_id,
-        license: VOLC_CONFIG.license, // 👈 传给 body 里的这个字段
+        license: VOLC_CONFIG.license,
         audios: [{
           audio_bytes: base64Audio,
-          audio_format: audioFormat
+          audio_format: 'mp3'
         }],
-        source: 2,
-        language: 0,
-        model_type: 1
+        source: 2,    // 2 表示声音复刻
+        language: 0,  // 0 表示中文
+        model_type: 1 // 1 表示基础模型 (2.0)
       },
       {
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer;" + VOLC_CONFIG.token,
+          // V3 标准 Authorization 格式：Bearer后面接空格
+          "Authorization": `Bearer ${VOLC_CONFIG.token}`,
           "Resource-Id": "volc.megatts.voiceclone"
         }
       }
     );
 
-    if (response.status === 200) {
-      // 5. 写入数据库，记录 speakerId 以便后续查询状态
+    // C. 处理结果
+    if (response.data.message === 'Success' || response.data.code === 0) {
+      // 写入数据库
       await UserVoice.create({
-        openid,
-        voiceName: voiceName || 'AI分身',
+        openid: openid,
+        voiceName: voiceName || '我的音色',
         speakerId: spk_id,
-        status: 0
+        status: 0 // 0: 训练中
       });
-
       res.json({ success: true, speakerId: spk_id });
     } else {
-      throw new Error(`火山接口返回状态码: ${response.status}`);
+      console.error("火山返回错误:", response.data);
+      res.status(500).json({ 
+        success: false, 
+        msg: `火山错误: ${response.data.message || '未知错误'}` 
+      });
     }
-
   } catch (err) {
-    console.error("Mega-TTS 训练请求失败:", err.response?.data || err.message);
-    res.status(500).json({ 
-      success: false, 
-      msg: '训练请求失败', 
-      detail: err.response?.data || err.message 
-    });
+    console.error("后端处理失败:", err.message);
+    res.status(500).json({ success: false, msg: '服务器训练请求失败' });
   }
 });
 
