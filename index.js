@@ -35,22 +35,37 @@ const sequelize = new Sequelize(
 // 3. 数据库表定义
 // ====================================================
 
-// 用户表（保持不变）
+// 用户表 —— 与数据库截图中的列完全对齐
 const User = sequelize.define('Users', {
   openid:    { type: DataTypes.STRING, allowNull: false, unique: true },
   nickName:  { type: DataTypes.STRING, defaultValue: '微信用户' },
   avatarUrl: { type: DataTypes.STRING, defaultValue: '' },
-  speakerId: DataTypes.STRING,
-  status:    { type: DataTypes.INTEGER, defaultValue: 0 },
-}, { tableName: 'Users', timestamps: true });
+  // 截图中 Users 表还有以下三列，保留与数据库一致
+  voice_name: { type: DataTypes.STRING, defaultValue: null }, // 下划线命名，与 DB 列名一致
+  task_id:    { type: DataTypes.STRING, defaultValue: null },
+  speakerId:  { type: DataTypes.STRING, defaultValue: null },
+  status:     { type: DataTypes.INTEGER, defaultValue: 0 },
+}, {
+  tableName:  'Users',
+  timestamps: true,
+  // 告诉 Sequelize：不要自动把 camelCase 转成下划线，让我们自己控制列名
+  underscored: false
+});
 
-// 用户音色表（保持不变，status: 0=训练中, 1=完成, 2=失败）
+// 用户音色表 —— 与数据库截图中的列完全对齐
+// status: 0=训练中, 1=完成, 2=失败
 const UserVoice = sequelize.define('UserVoice', {
-  openid:    DataTypes.STRING,
-  voiceName: DataTypes.STRING,
-  speakerId: DataTypes.STRING,
+  openid:    { type: DataTypes.STRING },
+  voiceName: { type: DataTypes.STRING },   // DB列名 voiceName
+  speakerId: { type: DataTypes.STRING },   // DB列名 speakerId，存 S_xxxxx
+  // taskId 截图里没有单独列，但 status/audioUrl 有，补齐
   status:    { type: DataTypes.INTEGER, defaultValue: 0 },
-}, { tableName: 'UserVoices', timestamps: true });
+  audioUrl:  { type: DataTypes.STRING(500), defaultValue: null }, // 截图第6列，存原始音频地址
+}, {
+  tableName:  'UserVoices',
+  timestamps: true,
+  underscored: false
+});
 
 // ====================================================
 // 【新增】音色 Slot 池表
@@ -99,39 +114,11 @@ app.get('/get_voices', async (req, res) => {
   try {
     const voices = await UserVoice.findAll({
       where: { openid },
-      order: [['id', 'DESC']]
+      order: [['createdAt', 'DESC']]
     });
     res.json({ success: true, list: voices });
   } catch (err) {
-    console.error('get_voices 失败:', err);
-  res.status(500).json({ success: false, msg: err.message }); // 👈 改这里
-  }
-});
-
-// 【新增】路由：音色改名
-app.post('/rename_voice', async (req, res) => {
-  const openid = req.headers['x-wx-openid'];
-  const { id, voiceName } = req.body;
- 
-  if (!id || !voiceName) {
-    return res.status(400).json({ success: false, msg: '参数不足' });
-  }
- 
-  try {
-    // 只能改自己的音色，用 openid 做校验防止越权
-    const [count] = await UserVoice.update(
-      { voiceName },
-      { where: { id, openid } }
-    );
- 
-    if (count === 0) {
-      return res.status(404).json({ success: false, msg: '音色不存在或无权限' });
-    }
- 
-    res.json({ success: true });
-  } catch (err) {
-    console.error('get_voices 失败:', err);
-    res.status(500).json({ success: false, msg: err.message });
+    res.status(500).json({ success: false, msg: '查询失败' });
   }
 });
 
@@ -227,10 +214,12 @@ app.post('/start_clone', async (req, res) => {
       await slot.update({ status: 1, openid });
 
       // 写入用户音色记录，status=0 表示训练中
+      // audioUrl 存原始音频的 HTTP 链接，方便排查问题
       await UserVoice.create({
         openid,
         voiceName: voiceName || '我的音色',
         speakerId: spk_id,
+        audioUrl:  audioUrl,
         status: 0
       });
 
@@ -352,7 +341,93 @@ app.post('/tts', async (req, res) => {
 });
 
 // ====================================================
-// 10. 启动服务
+// 10. 路由：对已有音色重新上传音频训练（不消耗新 slot）
+// 用户对已克隆成功的音色，上传新音频重新训练，提升效果
+// ====================================================
+app.post('/retrain_voice', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  const { audioUrl, speakerId } = req.body;
+
+  if (!audioUrl || !speakerId || !openid) {
+    return res.status(400).json({ success: false, msg: '参数不足' });
+  }
+
+  try {
+    // 校验：只能重训自己的音色
+    const voice = await UserVoice.findOne({ where: { speakerId, openid } });
+    if (!voice) {
+      return res.status(403).json({ success: false, msg: '音色不存在或无权限' });
+    }
+
+    // 下载音频并转 Base64
+    const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+    const base64Audio = Buffer.from(audioRes.data).toString('base64');
+
+    // 用同一个 speaker_id 再次上传，火山不会新建 slot，只是重新训练
+    const response = await axios.post(
+      `${VOLC_CONFIG.host}/api/v1/mega_tts/audio/upload`,
+      {
+        appid:      VOLC_CONFIG.appid,
+        speaker_id: speakerId,   // 复用已有的 S_xxxxx，不消耗新 slot
+        audios: [{
+          audio_bytes:  base64Audio,
+          audio_format: 'mp3'
+        }],
+        source:     2,
+        language:   0,
+        model_type: 1
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer; ' + VOLC_CONFIG.token,
+          'Resource-Id':   'volc.megatts.voiceclone'
+        }
+      }
+    );
+
+    if (response.data.BaseResp && response.data.BaseResp.StatusCode === 0) {
+      // 更新状态为训练中，更新音频地址
+      await voice.update({ status: 0, audioUrl });
+      res.json({ success: true, speakerId });
+    } else {
+      res.status(500).json({
+        success: false,
+        msg: '火山错误: ' + (response.data.BaseResp?.StatusMessage || '未知错误')
+      });
+    }
+  } catch (err) {
+    console.error('retrain_voice 异常:', err.message);
+    res.status(500).json({ success: false, msg: '重训失败: ' + err.message });
+  }
+});
+
+// ====================================================
+// 11. 路由：音色改名
+// ====================================================
+app.post('/rename_voice', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  const { id, voiceName } = req.body;
+  if (!id || !voiceName) {
+    return res.status(400).json({ success: false, msg: '参数不足' });
+  }
+  try {
+    const [count] = await UserVoice.update(
+      { voiceName },
+      { where: { id, openid } }
+    );
+    if (count === 0) {
+      return res.status(404).json({ success: false, msg: '音色不存在或无权限' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('改名失败:', err);
+    res.status(500).json({ success: false, msg: err.message });
+  }
+});
+
+// ====================================================
+// 12. 启动服务
 // ====================================================
 const port = process.env.PORT || 80;
 app.listen(port, async () => {
