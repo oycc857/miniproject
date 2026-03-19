@@ -397,8 +397,12 @@ app.post('/retrain_voice', async (req, res) => {
       });
     }
   } catch (err) {
+    // 打印火山引擎返回的详细错误
+    if (err.response) {
+      console.error('retrain_voice 火山返回错误:', JSON.stringify(err.response.data));
+    }
     console.error('retrain_voice 异常:', err.message);
-    res.status(500).json({ success: false, msg: '重训失败: ' + err.message });
+    res.status(500).json({ success: false, msg: err.response ? JSON.stringify(err.response.data) : err.message });
   }
 });
 
