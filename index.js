@@ -43,12 +43,19 @@ app.post('/login', async (req, res) => {
   const openid = req.headers['x-wx-openid'];
   const { nickName, avatarUrl } = req.body;
   if (!openid) return res.status(401).json({ success: false, msg: '未获取到OpenID' });
+
   try {
-    await User.sync({ alter: true });
+    // 关键：不要在这里写 User.sync({ alter: true })，它太重了且容易导致 500
+    
     const [user, created] = await User.findOrCreate({
       where: { openid: openid },
-      defaults: { openid, nickName: nickName || '微信用户', avatarUrl: avatarUrl || '' }
+      defaults: { 
+        openid, 
+        nickName: nickName || '微信用户', 
+        avatarUrl: avatarUrl || '' 
+      }
     });
+
     if (!created && (nickName || avatarUrl)) {
       if (nickName) user.nickName = nickName;
       if (avatarUrl) user.avatarUrl = avatarUrl;
@@ -56,7 +63,9 @@ app.post('/login', async (req, res) => {
     }
     res.json({ success: true, data: user });
   } catch (err) {
-    res.status(500).json({ success: false, msg: '数据库错误' });
+    // ⭐ 必须在控制台打印 err，否则你永远不知道是密码错了还是字段满了
+    console.error("数据库操作失败详情:", err); 
+    res.status(500).json({ success: false, msg: '数据库错误: ' + err.message });
   }
 });
 
