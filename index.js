@@ -108,6 +108,33 @@ app.get('/get_voices', async (req, res) => {
   }
 });
 
+// 【新增】路由：音色改名
+app.post('/rename_voice', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  const { id, voiceName } = req.body;
+ 
+  if (!id || !voiceName) {
+    return res.status(400).json({ success: false, msg: '参数不足' });
+  }
+ 
+  try {
+    // 只能改自己的音色，用 openid 做校验防止越权
+    const [count] = await UserVoice.update(
+      { voiceName },
+      { where: { id, openid } }
+    );
+ 
+    if (count === 0) {
+      return res.status(404).json({ success: false, msg: '音色不存在或无权限' });
+    }
+ 
+    res.json({ success: true });
+  } catch (err) {
+    console.error('改名失败:', err);
+    res.status(500).json({ success: false, msg: '改名失败' });
+  }
+});
+
 // ====================================================
 // 6. 【新增】管理员接口：批量录入从控制台买来的 slot
 // 使用方法：用 Postman/curl 调用一次即可，不需要每次调
