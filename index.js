@@ -49,7 +49,6 @@ const UserVoice = sequelize.define('UserVoice', {
   openid:    DataTypes.STRING,
   voiceName: DataTypes.STRING,
   speakerId: DataTypes.STRING,
-  taskId:    DataTypes.STRING,
   status:    { type: DataTypes.INTEGER, defaultValue: 0 },
 }, { tableName: 'UserVoices', timestamps: true });
 
