@@ -7,12 +7,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // ====================================================
-// 1. 火山引擎配置（替换成你自己的）
+// 1. 阿里云百炼配置（替换成你自己的 API Key）
+// 获取地址：https://bailian.console.aliyun.com/ -> API Key 管理
 // ====================================================
-const VOLC_CONFIG = {
-  appid: '2480093223',
-  token: 'caZWuEhKg2TWjHZWXFznm5GPWOr21AqL',
-  host: 'https://openspeech.bytedance.com'
+const ALIYUN_CONFIG = {
+  apiKey: process.env.DASHSCOPE_API_KEY || 'sk-4c4aefb6e8244b27aa100d8fff592607',
+  host:   'https://dashscope.aliyuncs.com',
+  model:  'cosyvoice-v3.5-flash'
 };
 
 // ====================================================
@@ -239,8 +240,8 @@ app.post('/start_clone', async (req, res) => {
 });
 
 // ====================================================
-// 8. 【新增】路由：查询克隆训练状态
-// 小程序每隔几秒调一次，直到 status=2（完成）
+// 8. 路由：查询克隆训练状态（阿里云版）
+// 阿里云状态：DEPLOYING=训练中, OK=完成, UNDEPLOYED=失败
 // ====================================================
 app.post('/check_clone_status', async (req, res) => {
   const { speakerId } = req.body;
@@ -248,34 +249,37 @@ app.post('/check_clone_status', async (req, res) => {
 
   try {
     const response = await axios.post(
-      `${VOLC_CONFIG.host}/api/v1/mega_tts/status`,
+      `${ALIYUN_CONFIG.host}/api/v1/services/audio/tts/customization`,
       {
-        appid:      VOLC_CONFIG.appid,
-        speaker_id: speakerId
+        model: 'voice-enrollment',
+        input: {
+          action:   'query_voice',
+          voice_id: speakerId
+        }
       },
       {
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer; ' + VOLC_CONFIG.token,
-          'Resource-Id':   'volc.megatts.voiceclone'
+          'Authorization': 'Bearer ' + ALIYUN_CONFIG.apiKey,
+          'Content-Type':  'application/json'
         }
       }
     );
 
-    const volcStatus = response.data.status;
-    // 火山状态码：1=训练中, 2=成功, 3=失败, 4=active(可用)
+    const aliyunStatus = response.data.output?.status;
+    // 阿里云状态：DEPLOYING=训练中, OK=完成可用, UNDEPLOYED=失败
 
-    // 如果训练完成，更新数据库里的状态
-    if (volcStatus === 2 || volcStatus === 4) {
+    if (aliyunStatus === 'OK') {
       await UserVoice.update({ status: 1 }, { where: { speakerId } });
-    } else if (volcStatus === 3) {
+      res.json({ success: true, status: 2 }); // 返回 2 兼容前端轮询逻辑
+    } else if (aliyunStatus === 'UNDEPLOYED') {
       await UserVoice.update({ status: 2 }, { where: { speakerId } });
+      res.json({ success: true, status: 3 }); // 返回 3 表示失败
+    } else {
+      res.json({ success: true, status: 1 }); // 返回 1 表示训练中
     }
-
-    res.json({ success: true, status: volcStatus });
   } catch (err) {
-    console.error('查询状态失败:', err.message);
-    res.status(500).json({ success: false, msg: '查询失败' });
+    console.error('查询状态失败:', err.response?.data || err.message);
+    res.status(500).json({ success: false, msg: '查询失败: ' + err.message });
   }
 });
 
@@ -341,8 +345,8 @@ app.post('/tts', async (req, res) => {
 });
 
 // ====================================================
-// 10. 路由：对已有音色重新上传音频训练（不消耗新 slot）
-// 用户对已克隆成功的音色，上传新音频重新训练，提升效果
+// 10. 路由：重新训练已有音色（阿里云版）
+// 阿里云克隆免费，重训就是删除旧音色再新建一个
 // ====================================================
 app.post('/retrain_voice', async (req, res) => {
   const openid = req.headers['x-wx-openid'];
@@ -359,50 +363,50 @@ app.post('/retrain_voice', async (req, res) => {
       return res.status(403).json({ success: false, msg: '音色不存在或无权限' });
     }
 
-    // 下载音频并转 Base64
-    const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-    const base64Audio = Buffer.from(audioRes.data).toString('base64');
+    // 先删除阿里云旧音色（可选，不删也能用，但会占用配额）
+    try {
+      await axios.post(
+        `${ALIYUN_CONFIG.host}/api/v1/services/audio/tts/customization`,
+        { model: 'voice-enrollment', input: { action: 'delete_voice', voice_id: speakerId } },
+        { headers: { 'Authorization': 'Bearer ' + ALIYUN_CONFIG.apiKey, 'Content-Type': 'application/json' } }
+      );
+    } catch (e) {
+      console.log('删除旧音色失败（忽略）:', e.message);
+    }
 
-    // 用同一个 speaker_id 再次上传，火山不会新建 slot，只是重新训练
+    // 重新生成前缀
+    const prefix = 'u' + openid.slice(-6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
+
+    // 用新音频重新克隆
     const response = await axios.post(
-      `${VOLC_CONFIG.host}/api/v1/mega_tts/audio/upload`,
+      `${ALIYUN_CONFIG.host}/api/v1/services/audio/tts/customization`,
       {
-        appid:      VOLC_CONFIG.appid,
-        speaker_id: speakerId,   // 复用已有的 S_xxxxx，不消耗新 slot
-        audios: [{
-          audio_bytes:  base64Audio,
-          audio_format: 'mp3'
-        }],
-        source:     2,
-        language:   0,
-        model_type: 1
+        model: 'voice-enrollment',
+        input: {
+          action:       'create_voice',
+          target_model: ALIYUN_CONFIG.model,
+          url:          audioUrl,
+          prefix:       prefix
+        }
       },
       {
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer; ' + VOLC_CONFIG.token,
-          'Resource-Id':   'volc.megatts.voiceclone'
+          'Authorization': 'Bearer ' + ALIYUN_CONFIG.apiKey,
+          'Content-Type':  'application/json'
         }
       }
     );
 
-    if (response.data.BaseResp && response.data.BaseResp.StatusCode === 0) {
-      // 更新状态为训练中，更新音频地址
-      await voice.update({ status: 0, audioUrl });
-      res.json({ success: true, speakerId });
+    if (response.data.output && response.data.output.voice_id) {
+      const newVoiceId = response.data.output.voice_id;
+      await voice.update({ speakerId: newVoiceId, audioUrl, status: 0 });
+      res.json({ success: true, speakerId: newVoiceId });
     } else {
-      res.status(500).json({
-        success: false,
-        msg: '火山错误: ' + (response.data.BaseResp?.StatusMessage || '未知错误')
-      });
+      res.status(500).json({ success: false, msg: '重训失败: ' + JSON.stringify(response.data) });
     }
   } catch (err) {
-    // 打印火山引擎返回的详细错误
-    if (err.response) {
-      console.error('retrain_voice 火山返回错误:', JSON.stringify(err.response.data));
-    }
-    console.error('retrain_voice 异常:', err.message);
-    res.status(500).json({ success: false, msg: err.response ? JSON.stringify(err.response.data) : err.message });
+    console.error('retrain_voice 异常:', err.response?.data || err.message);
+    res.status(500).json({ success: false, msg: err.response?.data?.message || err.message });
   }
 });
 
