@@ -9,9 +9,9 @@ app.use(express.urlencoded({ extended: false })); // 解析 URL 编码格式
 
 // 1--- 火山引擎配置 (请替换为你自己的) ---
 const VOLC_CONFIG = {
-  appid: '4870175430',
-  token: 'M-4FC8-xLI8dfRwC3MLSibGCg58TVedJ',
-  license: '4870175430',
+  appid: '2480093223',
+  token: 'caZWuEhKg2TWjHZWXFznm5GPWOr21AqL',
+  license: '2480093223',
   host: 'https://openspeech.bytedance.com'
 };
 
