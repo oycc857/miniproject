@@ -69,14 +69,9 @@ if (!audioUrl) {
 
   try {
     // 1. 下载微信云存储中的音频文件并转为 Buffer
-    const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-    const audioBuffer = Buffer.from(audioResponse.data);
-    
-    // 2. 将 Buffer 转为 Base64 (对应 Python 代码中的 encoded_data)
-    const base64Audio = audioBuffer.toString('base64');
-    
-    // 3. 获取文件后缀 (对应 Python 中的 audio_format)
-    // 微信音频通常是 .m4a 或 .mp3
+    // 1. 下载音频转为 Base64（对应官方 Python 逻辑）
+    const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+    const base64Audio = Buffer.from(audioRes.data).toString('base64');
     const audioFormat = audioUrl.split('.').pop().split('?')[0] || 'mp3';
 
     // 4. 调用火山引擎 Mega-TTS 接口
