@@ -9,7 +9,8 @@
     "axios": "^1.6.0",
     "crypto": "^1.0.1",
     "mysql2": "^2.3.3",
-    "sequelize": "^6.6.5"
+    "sequelize": "^6.6.5",
+    "ali-oss": "^6.x.x"
   },
   "scripts": {
     "start": "node index.js"
