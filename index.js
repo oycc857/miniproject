@@ -83,7 +83,7 @@ app.post('/start_clone', async (req, res) => {
         headers: {
           "Content-Type": "application/json",
           // V3 标准 Authorization 格式：Bearer后面接空格
-          "Authorization": `Bearer ${VOLC_CONFIG.token}`,
+         "Authorization": "Bearer;" + VOLC_CONFIG.token,
           "Resource-Id": "volc.megatts.voiceclone"
         }
       }
