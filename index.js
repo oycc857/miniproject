@@ -21,7 +21,7 @@ const ossClient = new OSS({
 const ALIYUN_CONFIG = {
   apiKey: process.env.DASHSCOPE_API_KEY,
   host:   'https://dashscope.aliyuncs.com',
-  model:  'cosyvoice-v3.5-flash'
+  model:  'cosyvoice-v3.5-flash-bailian-b0773dec37414903bed9477180d9c37f'
 };
 
 // ====================================================
