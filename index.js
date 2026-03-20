@@ -21,7 +21,7 @@ const ossClient = new OSS({
 const ALIYUN_CONFIG = {
   apiKey: process.env.DASHSCOPE_API_KEY,
   host:   'https://dashscope.aliyuncs.com',
-  model:  'cosyvoice-v1'
+  model:  'cosyvoice-v3.5-flash'
 };
 
 // ====================================================
@@ -355,25 +355,17 @@ app.post('/tts_private', async (req, res) => {
     console.log('【私人TTS】audioUrl =', voice.audioUrl);
 
     const response = await axios.post(
-      'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/generation',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/audio/speech',
       {
-        model: 'cosyvoice-v3.5-flash',
-        input: { text: text },
-        parameters: {
-          voice:       speakerId,
-          url:         voice.audioUrl,
-          format:      'mp3',
-          sample_rate: 22050,
-          volume:      50,
-          speech_rate: 0,
-          pitch_rate:  0
-        }
+        model:           'cosyvoice-v3.5-flash',
+        input:           text,
+        voice:           speakerId,
+        response_format: 'mp3'
       },
       {
         headers: {
-          'Authorization':     'Bearer ' + ALIYUN_CONFIG.apiKey,
-          'Content-Type':      'application/json',
-          'X-DashScope-Async': 'disable'
+          'Authorization': 'Bearer ' + ALIYUN_CONFIG.apiKey,
+          'Content-Type':  'application/json'
         },
         responseType: 'arraybuffer'
       }
@@ -387,7 +379,6 @@ app.post('/tts_private', async (req, res) => {
     }
 
     // 上传到微信云存储
-    const { default: FormData } = await import('form-data');
     // 直接返回 base64，让云函数上传
     const base64Audio = Buffer.from(response.data).toString('base64');
     res.json({ success: true, audio: base64Audio });
