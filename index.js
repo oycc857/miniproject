@@ -21,7 +21,7 @@ const ossClient = new OSS({
 const ALIYUN_CONFIG = {
   apiKey: process.env.DASHSCOPE_API_KEY,
   host:   'https://dashscope.aliyuncs.com',
-  model:  'cosyvoice-v3.5-flash'
+  model:  'cosyvoice-v1'
 };
 
 // ====================================================
@@ -132,7 +132,7 @@ app.post('/start_clone', async (req, res) => {
 
     // 2. 上传到阿里云 OSS（阿里云自己可以访问 OSS，URL 干净无问题）
     ossKey = `temp_voices/${openid.slice(-6)}_${Date.now()}.mp3`;
-    await ossClient.put(ossKey, audioBuffer);
+    await ossClient.put(ossKey, audioBuffer, { headers: { 'x-oss-object-acl': 'public-read' } });
     const ossUrl = `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${ossKey}`;
     console.log('OSS上传成功，URL:', ossUrl);
 
@@ -270,7 +270,7 @@ app.post('/retrain_voice', async (req, res) => {
     // 下载音频并上传到 OSS，供阿里云访问
     const audioRes2 = await axios.get(audioUrl, { responseType: 'arraybuffer' });
     const ossKey2 = `temp_voices/retrain_${openid.slice(-6)}_${Date.now()}.mp3`;
-    await ossClient.put(ossKey2, Buffer.from(audioRes2.data));
+    await ossClient.put(ossKey2, Buffer.from(audioRes2.data), { headers: { 'x-oss-object-acl': 'public-read' } });
     const ossUrl2 = `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${ossKey2}`;
 
     const response = await axios.post(
@@ -332,8 +332,81 @@ app.post('/rename_voice', async (req, res) => {
   }
 });
 
+
 // ====================================================
-// 10. 启动服务
+// 10. 私人音色 TTS 合成（阿里云 cosyvoice-v3.5-flash）
+// ====================================================
+app.post('/tts_private', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  const { text, speakerId } = req.body;
+
+  if (!text || !speakerId) {
+    return res.status(400).json({ success: false, msg: '参数不足' });
+  }
+
+  try {
+    // 从数据库取 audioUrl
+    const voice = await UserVoice.findOne({ where: { speakerId, openid } });
+    if (!voice) {
+      return res.status(403).json({ success: false, msg: '音色不存在或无权限' });
+    }
+
+    console.log('【私人TTS】speakerId =', speakerId);
+    console.log('【私人TTS】audioUrl =', voice.audioUrl);
+
+    const response = await axios.post(
+      'https://dashscope.aliyuncs.com/api/v1/services/audio/tts/generation',
+      {
+        model: 'cosyvoice-v3.5-flash',
+        input: { text: text },
+        parameters: {
+          voice:       speakerId,
+          url:         voice.audioUrl,
+          format:      'mp3',
+          sample_rate: 22050,
+          volume:      50,
+          speech_rate: 0,
+          pitch_rate:  0
+        }
+      },
+      {
+        headers: {
+          'Authorization':     'Bearer ' + ALIYUN_CONFIG.apiKey,
+          'Content-Type':      'application/json',
+          'X-DashScope-Async': 'disable'
+        },
+        responseType: 'arraybuffer'
+      }
+    );
+
+    const ct = response.headers['content-type'] || '';
+    if (ct.includes('application/json')) {
+      const errObj = JSON.parse(Buffer.from(response.data).toString());
+      console.error('【私人TTS】阿里云错误:', JSON.stringify(errObj));
+      return res.status(500).json({ success: false, msg: errObj.message || '合成失败' });
+    }
+
+    // 上传到微信云存储
+    const { default: FormData } = await import('form-data');
+    // 直接返回 base64，让云函数上传
+    const base64Audio = Buffer.from(response.data).toString('base64');
+    res.json({ success: true, audio: base64Audio });
+
+  } catch (err) {
+    let errMsg = err.message;
+    try {
+      if (err.response?.data) {
+        const t = Buffer.from(err.response.data).toString().trim();
+        if (t) errMsg = JSON.parse(t).message || t;
+      }
+    } catch (e) {}
+    console.error('【私人TTS】异常:', errMsg);
+    res.status(500).json({ success: false, msg: errMsg });
+  }
+});
+
+// ====================================================
+// 11. 启动服务
 // ====================================================
 const port = process.env.PORT || 80;
 app.listen(port, async () => {
