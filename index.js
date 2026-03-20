@@ -167,7 +167,7 @@ app.post('/start_clone', async (req, res) => {
         openid,
         voiceName: voiceName || '我的音色',
         speakerId: voiceId,
-        audioUrl:  ossKey,  // 存 ossKey，训练完成时用来删除 OSS 文件
+        audioUrl:  ossUrl,  // 存完整 OSS URL，TTS 合成时需要传给阿里云
         status: 0
       });
       res.json({ success: true, speakerId: voiceId });
@@ -215,18 +215,16 @@ app.post('/check_clone_status', async (req, res) => {
     const aliyunStatus = response.data.output?.status;
 
     if (aliyunStatus === 'OK') {
-      // 训练完成，删除 OSS 临时文件
-      const voice = await UserVoice.findOne({ where: { speakerId } });
-      if (voice && voice.audioUrl && voice.audioUrl.startsWith('temp_voices/')) {
-        ossClient.delete(voice.audioUrl).catch(e => console.log('删除OSS文件失败:', e.message));
-      }
+      // 训练完成，OSS 文件保留！TTS 合成每次都需要用这个 URL
       await UserVoice.update({ status: 1 }, { where: { speakerId } });
       res.json({ success: true, status: 2 });
     } else if (aliyunStatus === 'UNDEPLOYED') {
-      // 训练失败，也删除 OSS 临时文件
+      // 训练失败，删除 OSS 临时文件
       const voice = await UserVoice.findOne({ where: { speakerId } });
-      if (voice && voice.audioUrl && voice.audioUrl.startsWith('temp_voices/')) {
-        ossClient.delete(voice.audioUrl).catch(() => {});
+      if (voice && voice.audioUrl) {
+        // audioUrl 现在存完整 URL，需要提取 key
+        const key = voice.audioUrl.replace(/^https?:\/\/[^/]+\//, '');
+        ossClient.delete(key).catch(() => {});
       }
       await UserVoice.update({ status: 2 }, { where: { speakerId } });
       res.json({ success: true, status: 3 });
@@ -296,8 +294,8 @@ app.post('/retrain_voice', async (req, res) => {
 
     if (response.data.output && response.data.output.voice_id) {
       const newVoiceId = response.data.output.voice_id;
-      // 存 ossKey2，等训练完成后再删
-      await voice.update({ speakerId: newVoiceId, audioUrl: ossKey2, status: 0 });
+      // 存 ossUrl（完整 URL），TTS 合成时需要
+      await voice.update({ speakerId: newVoiceId, audioUrl: ossUrl2, status: 0 });
       res.json({ success: true, speakerId: newVoiceId });
     } else {
       ossClient.delete(ossKey2).catch(() => {});
