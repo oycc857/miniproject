@@ -298,14 +298,11 @@ app.post('/check_clone_status', async (req, res) => {
     const aliyunStatus = response.data.output?.status;
 
     if (aliyunStatus === 'OK') {
-      // 训练完成，OSS 文件保留！TTS 合成每次都需要用这个 URL
       await UserVoice.update({ status: 1 }, { where: { speakerId } });
       res.json({ success: true, status: 2 });
     } else if (aliyunStatus === 'UNDEPLOYED') {
-      // 训练失败，删除 OSS 临时文件
       const voice = await UserVoice.findOne({ where: { speakerId } });
       if (voice && voice.audioUrl) {
-        // audioUrl 现在存完整 URL，需要提取 key
         const key = voice.audioUrl.replace(/^https?:\/\/[^/]+\//, '');
         ossClient.delete(key).catch(() => {});
       }
@@ -315,7 +312,16 @@ app.post('/check_clone_status', async (req, res) => {
       res.json({ success: true, status: 1 });
     }
   } catch (err) {
-    console.error('查询状态失败:', err.response?.data || err.message);
+    const errData = err.response?.data;
+    const errCode = errData?.code || '';
+    console.error('查询状态失败:', errData || err.message);
+
+    // 资源不存在 = 训练失败或已过期，标记为失败停止轮询
+    if (errCode === 'BadRequest.ResourceNotExist' || errCode === 'InvalidVoiceId') {
+      await UserVoice.update({ status: 2 }, { where: { speakerId } }).catch(() => {});
+      return res.json({ success: true, status: 3 });
+    }
+
     res.status(500).json({ success: false, msg: '查询失败: ' + err.message });
   }
 });
