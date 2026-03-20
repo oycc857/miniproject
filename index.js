@@ -161,18 +161,17 @@ app.post('/start_clone', async (req, res) => {
 
     if (response.data.output && response.data.output.voice_id) {
       const voiceId = response.data.output.voice_id;
-      // 克隆成功后再删除 OSS 临时文件
-      ossClient.delete(ossKey).catch(e => console.log('删除OSS临时文件失败(忽略):', e.message));
+      // 不立即删除 OSS 文件！阿里云会异步下载，等训练完成后再删
+      // ossKey 存到 audioUrl 字段，查询状态成功后删除
       await UserVoice.create({
         openid,
         voiceName: voiceName || '我的音色',
         speakerId: voiceId,
-        audioUrl:  audioUrl,
+        audioUrl:  ossKey,  // 存 ossKey，训练完成时用来删除 OSS 文件
         status: 0
       });
       res.json({ success: true, speakerId: voiceId });
     } else {
-      // 失败也删除 OSS 临时文件
       ossClient.delete(ossKey).catch(() => {});
       console.error('阿里云返回错误:', JSON.stringify(response.data));
       res.status(500).json({
@@ -216,13 +215,23 @@ app.post('/check_clone_status', async (req, res) => {
     const aliyunStatus = response.data.output?.status;
 
     if (aliyunStatus === 'OK') {
+      // 训练完成，删除 OSS 临时文件
+      const voice = await UserVoice.findOne({ where: { speakerId } });
+      if (voice && voice.audioUrl && voice.audioUrl.startsWith('temp_voices/')) {
+        ossClient.delete(voice.audioUrl).catch(e => console.log('删除OSS文件失败:', e.message));
+      }
       await UserVoice.update({ status: 1 }, { where: { speakerId } });
-      res.json({ success: true, status: 2 }); // 2=完成，兼容前端轮询
+      res.json({ success: true, status: 2 });
     } else if (aliyunStatus === 'UNDEPLOYED') {
+      // 训练失败，也删除 OSS 临时文件
+      const voice = await UserVoice.findOne({ where: { speakerId } });
+      if (voice && voice.audioUrl && voice.audioUrl.startsWith('temp_voices/')) {
+        ossClient.delete(voice.audioUrl).catch(() => {});
+      }
       await UserVoice.update({ status: 2 }, { where: { speakerId } });
-      res.json({ success: true, status: 3 }); // 3=失败
+      res.json({ success: true, status: 3 });
     } else {
-      res.json({ success: true, status: 1 }); // 1=训练中
+      res.json({ success: true, status: 1 });
     }
   } catch (err) {
     console.error('查询状态失败:', err.response?.data || err.message);
@@ -287,8 +296,8 @@ app.post('/retrain_voice', async (req, res) => {
 
     if (response.data.output && response.data.output.voice_id) {
       const newVoiceId = response.data.output.voice_id;
-      ossClient.delete(ossKey2).catch(() => {});
-      await voice.update({ speakerId: newVoiceId, audioUrl, status: 0 });
+      // 存 ossKey2，等训练完成后再删
+      await voice.update({ speakerId: newVoiceId, audioUrl: ossKey2, status: 0 });
       res.json({ success: true, speakerId: newVoiceId });
     } else {
       ossClient.delete(ossKey2).catch(() => {});
