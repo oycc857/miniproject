@@ -316,10 +316,9 @@ app.post('/check_clone_status', async (req, res) => {
     const errCode = errData?.code || '';
     console.error('查询状态失败:', errData || err.message);
 
-    // 资源不存在 = 训练失败或已过期，标记为失败停止轮询
-    if (errCode === 'BadRequest.ResourceNotExist' || errCode === 'InvalidVoiceId') {
-      await UserVoice.update({ status: 2 }, { where: { speakerId } }).catch(() => {});
-      return res.json({ success: true, status: 3 });
+    // ResourceNotExist = 阿里云还没建好，继续轮询等待
+    if (errCode === 'BadRequest.ResourceNotExist') {
+      return res.json({ success: true, status: 1 }); // 继续轮询
     }
 
     res.status(500).json({ success: false, msg: '查询失败: ' + err.message });
