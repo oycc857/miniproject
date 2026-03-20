@@ -167,7 +167,7 @@ app.post('/start_clone', async (req, res) => {
         openid,
         voiceName: voiceName || '我的音色',
         speakerId: voiceId,
-        audioUrl:  ossKey,  // 存 ossKey，训练完成时用来删除 OSS 文件
+        audioUrl:  ossUrl,  // 存 ossKey，训练完成时用来删除 OSS 文件
         status: 0
       });
       res.json({ success: true, speakerId: voiceId });
@@ -218,7 +218,6 @@ app.post('/check_clone_status', async (req, res) => {
       // 训练完成，删除 OSS 临时文件
       const voice = await UserVoice.findOne({ where: { speakerId } });
       if (voice && voice.audioUrl && voice.audioUrl.startsWith('temp_voices/')) {
-        ossClient.delete(voice.audioUrl).catch(e => console.log('删除OSS文件失败:', e.message));
       }
       await UserVoice.update({ status: 1 }, { where: { speakerId } });
       res.json({ success: true, status: 2 });
