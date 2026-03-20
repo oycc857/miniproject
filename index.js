@@ -450,6 +450,21 @@ app.post('/tts_private', async (req, res) => {
   }
 });
 
+
+// ====================================================
+// 强制标记音色训练完成（阿里云查询接口不可靠时使用）
+// ====================================================
+app.post('/force_complete', async (req, res) => {
+  const { speakerId } = req.body;
+  if (!speakerId) return res.status(400).json({ success: false });
+  try {
+    await UserVoice.update({ status: 1 }, { where: { speakerId } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, msg: err.message });
+  }
+});
+
 // ====================================================
 // 11. 启动服务
 // ====================================================
