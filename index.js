@@ -332,9 +332,9 @@ app.post('/retrain_voice', async (req, res) => {
   }
 
   try {
-    const voice = await UserVoice.findOne({ where: { speakerId, openid } });
+    const voice = await UserVoice.findOne({ where: { speakerId } });
     if (!voice) {
-      return res.status(403).json({ success: false, msg: '音色不存在或无权限' });
+      return res.status(403).json({ success: false, msg: '音色不存在' });
     }
 
     // 先删除旧音色
@@ -428,9 +428,9 @@ app.post('/tts_private', async (req, res) => {
   }
 
   try {
-    const voice = await UserVoice.findOne({ where: { speakerId, openid } });
+    const voice = await UserVoice.findOne({ where: { speakerId } });
     if (!voice) {
-      return res.status(403).json({ success: false, msg: '音色不存在或无权限' });
+      return res.status(403).json({ success: false, msg: '音色不存在' });
     }
 
     console.log('【私人TTS】speakerId =', speakerId);
