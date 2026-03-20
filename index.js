@@ -295,20 +295,18 @@ app.post('/check_clone_status', async (req, res) => {
       }
     );
 
-    const aliyunStatus = response.data.output?.status;
+    const output = response.data.output || {};
+    const aliyunStatus = output.status;
+    console.log('【查询状态】阿里云返回:', JSON.stringify(response.data));
 
     if (aliyunStatus === 'OK') {
       await UserVoice.update({ status: 1 }, { where: { speakerId } });
       res.json({ success: true, status: 2 });
-    } else if (aliyunStatus === 'UNDEPLOYED') {
-      const voice = await UserVoice.findOne({ where: { speakerId } });
-      if (voice && voice.audioUrl) {
-        const key = voice.audioUrl.replace(/^https?:\/\/[^/]+\//, '');
-        ossClient.delete(key).catch(() => {});
-      }
+    } else if (aliyunStatus === 'UNDEPLOYED' || aliyunStatus === 'FAILED') {
       await UserVoice.update({ status: 2 }, { where: { speakerId } });
       res.json({ success: true, status: 3 });
     } else {
+      // DEPLOYING 或其他状态，继续等待
       res.json({ success: true, status: 1 });
     }
   } catch (err) {
