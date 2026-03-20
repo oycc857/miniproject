@@ -451,6 +451,37 @@ app.post('/tts_private', async (req, res) => {
 });
 
 
+
+// ====================================================
+// 删除音色
+// ====================================================
+app.post('/delete_voice', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  const { id, speakerId } = req.body;
+  if (!id) return res.status(400).json({ success: false, msg: '参数不足' });
+  try {
+    // 删阿里云音色（忽略失败）
+    if (speakerId) {
+      axios.post(
+        `${ALIYUN_CONFIG.host}/api/v1/services/audio/tts/customization`,
+        { model: 'voice-enrollment', input: { action: 'delete_voice', voice_id: speakerId } },
+        { headers: { 'Authorization': 'Bearer ' + ALIYUN_CONFIG.apiKey, 'Content-Type': 'application/json' } }
+      ).catch(() => {});
+    }
+    // 删数据库记录和 OSS 文件
+    const voice = await UserVoice.findOne({ where: { id, openid } });
+    if (voice && voice.audioUrl) {
+      const key = voice.audioUrl.replace(/^https?:\/\/[^/]+\//, '');
+      ossClient.delete(key).catch(() => {});
+    }
+    await UserVoice.destroy({ where: { id, openid } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('删除音色失败:', err);
+    res.status(500).json({ success: false, msg: err.message });
+  }
+});
+
 // ====================================================
 // 强制标记音色训练完成（阿里云查询接口不可靠时使用）
 // ====================================================
