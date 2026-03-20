@@ -2,11 +2,13 @@ const express = require('express');
 const axios = require('axios');
 const { Sequelize, DataTypes } = require('sequelize');
 const OSS = require('ali-oss');
-const WebSocket = require('ws');
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+
+const WebSocket = require('ws');
 
 // ====================================================
 // WebSocket TTS Helper（cosyvoice-v3.5 系列专用）
@@ -34,7 +36,7 @@ function ttsWithWebSocket(text, voiceId) {
           task_group: 'audio',
           task:       'tts',
           function:   'SpeechSynthesizer',
-          model:      'cosyvoice-v3.5-plus',
+          model:      'cosyvoice-v3.5-flash',
           parameters: { voice: voiceId, format: 'mp3', sample_rate: 22050 },
           input:      {}
         }
@@ -102,7 +104,7 @@ const ossClient = new OSS({
 const ALIYUN_CONFIG = {
   apiKey: process.env.DASHSCOPE_API_KEY,
   host:   'https://dashscope.aliyuncs.com',
-  model:  'cosyvoice-v2'
+  model:  'cosyvoice-v3.5-flash'
 };
 
 // ====================================================
