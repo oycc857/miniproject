@@ -2,10 +2,94 @@ const express = require('express');
 const axios = require('axios');
 const { Sequelize, DataTypes } = require('sequelize');
 const OSS = require('ali-oss');
+const WebSocket = require('ws');
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+
+const WebSocket = require('ws');
+
+// ====================================================
+// WebSocket TTS Helper（cosyvoice-v3.5 系列专用）
+// ====================================================
+function ttsWithWebSocket(text, voiceId) {
+  return new Promise((resolve, reject) => {
+    const url = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+    const ws = new WebSocket(url, {
+      headers: { 'Authorization': 'bearer ' + ALIYUN_CONFIG.apiKey }
+    });
+
+    const chunks = [];
+    let taskStarted = false;
+    const taskId = 'task_' + Date.now();
+
+    ws.on('open', () => {
+      // 1. 发送 run-task 指令
+      ws.send(JSON.stringify({
+        header: {
+          action:    'run-task',
+          task_id:   taskId,
+          streaming: 'duplex'
+        },
+        payload: {
+          task_group: 'audio',
+          task:       'tts',
+          function:   'SpeechSynthesizer',
+          model:      'cosyvoice-v3.5-plus',
+          parameters: { voice: voiceId, format: 'mp3', sample_rate: 22050 },
+          input:      {}
+        }
+      }));
+    });
+
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) {
+        // 二进制帧 = 音频数据
+        chunks.push(Buffer.from(data));
+        return;
+      }
+
+      let msg;
+      try { msg = JSON.parse(data.toString()); } catch (e) { return; }
+
+      const event = msg.header?.event;
+
+      if (event === 'task-started') {
+        taskStarted = true;
+        // 2. 发送文本
+        ws.send(JSON.stringify({
+          header:  { action: 'continue-task', task_id: taskId, streaming: 'duplex' },
+          payload: { input: { text: text } }
+        }));
+        // 3. 发送结束信号
+        ws.send(JSON.stringify({
+          header:  { action: 'finish-task', task_id: taskId, streaming: 'duplex' },
+          payload: { input: {} }
+        }));
+      } else if (event === 'task-finished') {
+        ws.close();
+        resolve(Buffer.concat(chunks));
+      } else if (event === 'task-failed') {
+        ws.close();
+        reject(new Error(msg.header?.error_message || '合成失败'));
+      }
+    });
+
+    ws.on('error', (err) => reject(err));
+    ws.on('close', (code, reason) => {
+      if (chunks.length > 0 && !taskStarted) resolve(Buffer.concat(chunks));
+    });
+
+    // 超时保护 30 秒
+    setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.close();
+      if (chunks.length > 0) resolve(Buffer.concat(chunks));
+      else reject(new Error('WebSocket TTS 超时'));
+    }, 30000);
+  });
+}
 
 // OSS 客户端（需在云托管环境变量里设置这四个值）
 const ossClient = new OSS({
@@ -21,7 +105,7 @@ const ossClient = new OSS({
 const ALIYUN_CONFIG = {
   apiKey: process.env.DASHSCOPE_API_KEY,
   host:   'https://dashscope.aliyuncs.com',
-  model:  'cosyvoice-v3.5-flash'
+  model:  'cosyvoice-v2'
 };
 
 // ====================================================
@@ -345,54 +429,20 @@ app.post('/tts_private', async (req, res) => {
   }
 
   try {
-    // 从数据库取 audioUrl
     const voice = await UserVoice.findOne({ where: { speakerId, openid } });
     if (!voice) {
       return res.status(403).json({ success: false, msg: '音色不存在或无权限' });
     }
 
     console.log('【私人TTS】speakerId =', speakerId);
-    console.log('【私人TTS】audioUrl =', voice.audioUrl);
 
-    const response = await axios.post(
-      'https://dashscope.aliyuncs.com/compatible-mode/v1/audio/speech',
-      {
-        model:           'cosyvoice-v3.5-flash',
-        input:           text,
-        voice:           speakerId,
-        response_format: 'mp3'
-      },
-      {
-        headers: {
-          'Authorization': 'Bearer ' + ALIYUN_CONFIG.apiKey,
-          'Content-Type':  'application/json'
-        },
-        responseType: 'arraybuffer'
-      }
-    );
-
-    const ct = response.headers['content-type'] || '';
-    if (ct.includes('application/json')) {
-      const errObj = JSON.parse(Buffer.from(response.data).toString());
-      console.error('【私人TTS】阿里云错误:', JSON.stringify(errObj));
-      return res.status(500).json({ success: false, msg: errObj.message || '合成失败' });
-    }
-
-    // 上传到微信云存储
-    // 直接返回 base64，让云函数上传
-    const base64Audio = Buffer.from(response.data).toString('base64');
+    const audioBuffer = await ttsWithWebSocket(text, speakerId);
+    const base64Audio = audioBuffer.toString('base64');
     res.json({ success: true, audio: base64Audio });
 
   } catch (err) {
-    let errMsg = err.message;
-    try {
-      if (err.response?.data) {
-        const t = Buffer.from(err.response.data).toString().trim();
-        if (t) errMsg = JSON.parse(t).message || t;
-      }
-    } catch (e) {}
-    console.error('【私人TTS】异常:', errMsg);
-    res.status(500).json({ success: false, msg: errMsg });
+    console.error('【私人TTS】异常:', err.message);
+    res.status(500).json({ success: false, msg: err.message });
   }
 });
 
