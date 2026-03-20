@@ -8,9 +8,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-
-const WebSocket = require('ws');
-
 // ====================================================
 // WebSocket TTS Helper（cosyvoice-v3.5 系列专用）
 // ====================================================
