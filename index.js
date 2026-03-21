@@ -654,6 +654,6 @@ app.post('/force_complete', async (req, res) => {
 const port = process.env.PORT || 80;
 app.listen(port, async () => {
   console.log('Server running on port', port);
-  await sequelize.sync();
+  await sequelize.sync({ alter: true });
   console.log('数据库同步完成');
 });
