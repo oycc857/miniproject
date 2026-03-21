@@ -138,7 +138,96 @@ const User = sequelize.define('Users', {
   task_id:    { type: DataTypes.STRING, defaultValue: null },
   speakerId:  { type: DataTypes.STRING, defaultValue: null },
   status:     { type: DataTypes.INTEGER, defaultValue: 0 },
+  // ── 计费字段 ──
+  free_chars_used:   { type: DataTypes.INTEGER, defaultValue: 0 },   // 已用免费公共字符
+  free_private_used: { type: DataTypes.INTEGER, defaultValue: 0 },   // 已用免费私人字符
+  free_clone_used:   { type: DataTypes.INTEGER, defaultValue: 0 },   // 已用免费克隆次数
+  paid_chars:        { type: DataTypes.INTEGER, defaultValue: 0 },   // 付费字符余额
+  paid_clone:        { type: DataTypes.INTEGER, defaultValue: 0 },   // 付费克隆次数余额
+  subscribe_expire:  { type: DataTypes.DATE,    defaultValue: null }, // 订阅到期时间
 }, { tableName: 'Users', timestamps: true, underscored: false });
+
+// ====================================================
+// 计费配置
+// ====================================================
+const BILLING = {
+  FREE_PUBLIC_CHARS:  100,   // 免费公共音色字符
+  FREE_PRIVATE_CHARS: 30,    // 免费私人音色字符
+  FREE_CLONE_TIMES:   1,     // 免费克隆次数
+};
+
+// 检查并扣除字符（返回 {ok, msg}）
+async function chargeChars(user, charCount, isPrivate) {
+  const now = new Date();
+  const hasSubscribe = user.subscribe_expire && new Date(user.subscribe_expire) > now;
+
+  // 订阅用户：不限字符
+  if (hasSubscribe) return { ok: true };
+
+  // 优先扣付费字符
+  if (user.paid_chars >= charCount) {
+    await user.decrement('paid_chars', { by: charCount });
+    return { ok: true };
+  }
+
+  // 再用免费额度
+  if (isPrivate) {
+    if (user.free_private_used + charCount <= BILLING.FREE_PRIVATE_CHARS) {
+      await user.increment('free_private_used', { by: charCount });
+      return { ok: true };
+    }
+  } else {
+    if (user.free_chars_used + charCount <= BILLING.FREE_PUBLIC_CHARS) {
+      await user.increment('free_chars_used', { by: charCount });
+      return { ok: true };
+    }
+  }
+
+  // 付费字符不足且免费已用完
+  const remaining = isPrivate
+    ? Math.max(0, BILLING.FREE_PRIVATE_CHARS - user.free_private_used) + user.paid_chars
+    : Math.max(0, BILLING.FREE_PUBLIC_CHARS - user.free_chars_used) + user.paid_chars;
+
+  return { ok: false, msg: `字符余额不足（剩余 ${remaining} 字），请充值后继续使用` };
+}
+
+// 检查并扣除克隆次数
+async function chargeClone(user) {
+  const now = new Date();
+  const hasSubscribe = user.subscribe_expire && new Date(user.subscribe_expire) > now;
+
+  // 订阅用户：不限克隆
+  if (hasSubscribe) return { ok: true };
+
+  // 付费克隆次数
+  if (user.paid_clone > 0) {
+    await user.decrement('paid_clone', { by: 1 });
+    return { ok: true };
+  }
+
+  // 免费次数
+  if (user.free_clone_used < BILLING.FREE_CLONE_TIMES) {
+    await user.increment('free_clone_used', { by: 1 });
+    return { ok: true };
+  }
+
+  return { ok: false, msg: '免费克隆次数已用完，请购买克隆包或订阅月卡' };
+}
+
+// 获取用户余额概况
+function getUserBalance(user) {
+  const now = new Date();
+  const hasSubscribe = user.subscribe_expire && new Date(user.subscribe_expire) > now;
+  return {
+    hasSubscribe,
+    subscribeExpire: user.subscribe_expire,
+    freeCharsLeft:   Math.max(0, BILLING.FREE_PUBLIC_CHARS  - user.free_chars_used),
+    freePrivateLeft: Math.max(0, BILLING.FREE_PRIVATE_CHARS - user.free_private_used),
+    freeCloneLeft:   Math.max(0, BILLING.FREE_CLONE_TIMES   - user.free_clone_used),
+    paidChars:       user.paid_chars,
+    paidClone:       user.paid_clone,
+  };
+}
 
 const UserVoice = sequelize.define('UserVoice', {
   openid:    { type: DataTypes.STRING },
@@ -204,9 +293,25 @@ app.post('/start_clone', async (req, res) => {
   let ossKey = null;
 
   try {
+    // 检查克隆次数
+    const user = await User.findOne({ where: { openid } });
+    if (!user) return res.status(401).json({ success: false, msg: '用户不存在' });
+
+    const cloneCheck = await chargeClone(user);
+    if (!cloneCheck.ok) {
+      return res.status(403).json({ success: false, msg: cloneCheck.msg, code: 'NO_CLONE_QUOTA' });
+    }
+
     // 防止同一用户重复提交
     const existingVoice = await UserVoice.findOne({ where: { openid, status: 0 } });
     if (existingVoice) {
+      // 退还刚扣的克隆次数
+      const now = new Date();
+      const hasSubscribe = user.subscribe_expire && new Date(user.subscribe_expire) > now;
+      if (!hasSubscribe) {
+        if (user.paid_clone > 0) await user.increment('paid_clone', { by: 1 });
+        else await user.decrement('free_clone_used', { by: 1 });
+      }
       return res.status(400).json({
         success: false,
         msg: '你有一个音色正在训练中，请等待完成后再提交'
@@ -442,6 +547,15 @@ app.post('/tts_private', async (req, res) => {
 
     console.log('【私人TTS】speakerId =', speakerId);
 
+    // 扣除字符
+    const user = await User.findOne({ where: { openid } });
+    if (!user) return res.status(401).json({ success: false, msg: '用户不存在' });
+    const charCount = text.length;
+    const charCheck = await chargeChars(user, charCount, true);
+    if (!charCheck.ok) {
+      return res.status(403).json({ success: false, msg: charCheck.msg, code: 'NO_CHARS' });
+    }
+
     const audioBuffer = await ttsWithWebSocket(text, speakerId);
     const base64Audio = audioBuffer.toString('base64');
     res.json({ success: true, audio: base64Audio });
@@ -480,6 +594,42 @@ app.post('/delete_voice', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('删除音色失败:', err);
+    res.status(500).json({ success: false, msg: err.message });
+  }
+});
+
+
+// ====================================================
+// 查询用户余额
+// ====================================================
+app.get('/get_balance', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  if (!openid) return res.status(401).json({ success: false, msg: '未获取到OpenID' });
+  try {
+    const user = await User.findOne({ where: { openid } });
+    if (!user) return res.status(404).json({ success: false, msg: '用户不存在' });
+    res.json({ success: true, balance: getUserBalance(user) });
+  } catch (err) {
+    res.status(500).json({ success: false, msg: err.message });
+  }
+});
+
+// ====================================================
+// 公共音色 TTS 扣费检查（云函数合成前调用）
+// ====================================================
+app.post('/charge_public_tts', async (req, res) => {
+  const openid = req.headers['x-wx-openid'];
+  const { charCount } = req.body;
+  if (!openid || !charCount) return res.status(400).json({ success: false, msg: '参数不足' });
+  try {
+    const user = await User.findOne({ where: { openid } });
+    if (!user) return res.status(401).json({ success: false, msg: '用户不存在' });
+    const result = await chargeChars(user, charCount, false);
+    if (!result.ok) {
+      return res.status(403).json({ success: false, msg: result.msg, code: 'NO_CHARS' });
+    }
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ success: false, msg: err.message });
   }
 });
