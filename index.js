@@ -654,6 +654,11 @@ app.post('/force_complete', async (req, res) => {
 const port = process.env.PORT || 80;
 app.listen(port, async () => {
   console.log('Server running on port', port);
-  await sequelize.sync({ alter: true });
-  console.log('数据库同步完成');
+  try {
+    await sequelize.sync({ alter: true });
+    console.log('数据库同步完成');
+  } catch (err) {
+    console.error('数据库同步失败:', err.message);
+    // 同步失败不影响服务启动，手动加列后重启即可
+  }
 });
