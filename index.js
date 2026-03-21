@@ -7,6 +7,10 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// 静态文件服务（字体等资源）
+const path = require('path');
+app.use('/static', express.static(path.join(__dirname, 'static')));
+
 
 const WebSocket = require('ws');
 
