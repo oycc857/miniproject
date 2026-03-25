@@ -550,15 +550,18 @@ app.post('/force_complete', async (req, res) => {
 });
 
 // ====================================================
-// 启动服务
+// 启动服务：先同步数据库，再开始监听，避免新列不存在时请求进来报错
 // ====================================================
 const port = process.env.PORT || 80;
-app.listen(port, async () => {
-  console.log('Server running on port', port);
+
+(async () => {
   try {
     await sequelize.sync({ alter: true });
     console.log('数据库同步完成');
   } catch (err) {
     console.error('数据库同步失败:', err.message);
   }
-});
+  app.listen(port, () => {
+    console.log('Server running on port', port);
+  });
+})();
