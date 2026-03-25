@@ -121,9 +121,9 @@ const User = sequelize.define('Users', {
 // 每日免费配额
 // ====================================================
 const BILLING = {
-  FREE_PUBLIC_CHARS:  100,  // 每日免费公共字符
-  FREE_PRIVATE_CHARS: 30,   // 每日免费私人字符
-  FREE_CLONE_TIMES:   1,    // 每日免费克隆次数
+  FREE_PUBLIC_CHARS:  200,  // 每日免费公共字符
+  FREE_PRIVATE_CHARS: 50,   // 每日免费私人字符
+  FREE_CLONE_TIMES:   5,    // 每日免费克隆次数
 };
 
 // 检查是否需要重置（每天0点刷新）
