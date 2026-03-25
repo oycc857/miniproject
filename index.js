@@ -107,22 +107,14 @@ const sequelize = new Sequelize(
 // 数据库表定义
 // ====================================================
 const User = sequelize.define('Users', {
-  openid:     { type: DataTypes.STRING, allowNull: false, unique: true },
-  nickName:   { type: DataTypes.STRING, defaultValue: '微信用户' },
-  avatarUrl:  { type: DataTypes.STRING, defaultValue: '' },
-  voice_name: { type: DataTypes.STRING, defaultValue: null },
-  task_id:    { type: DataTypes.STRING, defaultValue: null },
-  speakerId:  { type: DataTypes.STRING, defaultValue: null },
-  status:     { type: DataTypes.INTEGER, defaultValue: 0 },
+  openid:            { type: DataTypes.STRING,  allowNull: false, unique: true },
+  nickName:          { type: DataTypes.STRING,  defaultValue: '微信用户' },
+  avatarUrl:         { type: DataTypes.STRING,  defaultValue: '' },
   // ── 免费配额（每日重置）──
   free_chars_used:   { type: DataTypes.INTEGER, defaultValue: 0 },
   free_private_used: { type: DataTypes.INTEGER, defaultValue: 0 },
   free_clone_used:   { type: DataTypes.INTEGER, defaultValue: 0 },
-  last_reset_date:   { type: DataTypes.DATEONLY,  defaultValue: null }, // 上次重置日期
-  // ── 保留字段（暂不使用）──
-  paid_chars:        { type: DataTypes.INTEGER, defaultValue: 0 },
-  paid_clone:        { type: DataTypes.INTEGER, defaultValue: 0 },
-  subscribe_expire:  { type: DataTypes.DATE,    defaultValue: null },
+  last_reset_date:   { type: DataTypes.DATEONLY, defaultValue: null },
 }, { tableName: 'Users', timestamps: true, underscored: false });
 
 // ====================================================
